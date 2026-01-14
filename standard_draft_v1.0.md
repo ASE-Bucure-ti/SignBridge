@@ -21,26 +21,29 @@ A versioned, extensible protocol for web apps to request digital signatures from
 - `binary` (opaque bytes)
 
 ## 4. Content Representation
-Each payload supports **inline** or **remote** acquisition:
-- Inline text: `{ "mode": "inline", "encoding": "utf8", "value": "..." }`
-- Inline binary: `{ "mode": "inline", "encoding": "base64", "value": "..." }`
-- Remote fetch (for any payload; **mandatory for anything expected >1 MB**):
-  `{ "mode": "remote", "downloadUrl": "https://...", "httpMethod": "GET", "headers": {"Authorization": "Bearer ...", "X-API-Key": "..."}, "bodyTemplate": "..." (optional), "mimeType": "application/pdf", "fileName": "report.pdf" }`
+Each payload item describes how to access its content.
+- **Text / XML / JSON**: Can be `inline` or `remote`.
+  - Inline: `{ "mode": "inline", "encoding": "utf8", "content": "..." }`
+- **PDF / Binary**: MUST use `mode: "remote"`. **Inline Base64 is forbidden** to minimize payloads and prevent overflows.
+  - Remote fetch:
+    `{ "mode": "remote", "downloadUrl": "https://...", "httpMethod": "GET", "headers": {"Authorization": "Bearer ...", "X-API-Key": "..."}, "mimeType": "application/pdf", "fileName": "report.pdf" }`
 
 Notes:
-- Payloads exceeding 1 MB requires `remote`.
+- **No JSON wrapping**: The `downloadUrl` must return the **raw binary bytes** (e.g., `Content-Type: application/pdf`). Do not return a JSON object containing a Base64 string.
 - API keys or auth tokens travel in `headers`; choose the header name that matches the protected endpoint.
 - Content integrity is the responsibility of the caller; no hash verification is performed by the extension or native host.
 
-## 5. Signing Options per Payload
+## 5. Signing Options per Object
 Signing profile (algorithms, formats) is fixed by the platform; callers cannot choose algorithms. Signing hints are provided **only if applicable**:
 - `pdfOptions` (required if and only if `dataType: "pdf"`): `{ "label": "<visible label text>" }` (single signature, no page/rect selection exposed).
 - `xmlOptions` (required if and only if `dataType: "xml"`): `{ "xpath": "//Root/Node", "idAttribute": "Id" }`.
 
 Omit these fields entirely if the dataType does not require them.
 
-## 6. Delivery & Callback (Mandatory per Payload)
-Signed output is never returned inline. Each payload **must** specify delivery endpoints:
+## 6. Delivery & Callback (Mandatory)
+Signed output is never returned inline. Each object **must** specify delivery endpoints.
+**Optimization Rule**: If multiple objects share the same callback/upload configuration, you **MUST** use the **Object Grouping** mechanism (Section 7) instead of repeating definitions.
+
 - `callback`: `{ "onSuccess": "https://...", "onError": "https://...", "progress": "https://...", "payload": {...} }`
   - `progress`: route where the native host POSTs periodic updates during signing (see Section 6a).
   - `onSuccess`: route where the native host POSTs when signing **and** upload complete successfully.
@@ -48,13 +51,13 @@ Signed output is never returned inline. Each payload **must** specify delivery e
   - `payload`: arbitrary metadata provided by the caller; the native host includes it in all callbacks unchanged.
 - `upload`: `{ "uploadUrl": "https://...", "httpMethod": "POST", "fieldName": "file", "fileName": "signed.pdf", "signedContentType": "pdf" }`
   - `fieldName`: form field name for the multipart upload (e.g., `"file"`).
-  - `fileName`: file name to send in the multipart `Content-Disposition` header (e.g., `"report-1-signed.pdf"`). Can include `<payloadId>` placeholder for grouping scenarios.
+  - `fileName`: file name to send in the multipart `Content-Disposition` header (e.g., `"report-1-signed.pdf"`). Can include `<objectId>` placeholder for grouping scenarios.
   - `signedContentType` (required; caller responsibility): indicates what will be sent:
     - `"string"`: hash digest of the signed text
     - `"pdf"`: signed PDF bytes
     - `"xml"`: modified XML structure with signature
     - `"binary"`: signed binary bytes
-  - **Headers**: Use the `headers` object from the `content` object of each payload; the native host includes them in the upload multipart request.
+  - **Headers**: Use the `headers` object from the `content` object of each object; the native host includes them in the upload multipart request.
 
 The native host streams results to `upload` and reports lifecycle via `callback`; no inline `signedContent` is returned.
 
@@ -62,40 +65,42 @@ The native host streams results to `upload` and reports lifecycle via `callback`
 The native host POSTs to the `progress` endpoint periodically while signing:
 ```json
 {
-  "payloadId": "<payloadId>",
+  "payloadId": "<objectId>",
   "requestId": "<requestId>",
   "status": "signing" | "uploading",
   "percentComplete": 0-100,
   "message": "<optional status message>"
 }
 ```
-- **Headers**: Include the same `headers` from the payload's `content` object.
+- **Headers**: Include the same `headers` from the object's `content` object.
 - **Expected Response**: HTTP 200 (or 2xx). If the native host receives anything else, it cancels the signing process for that payload with `PROGRESS_ENDPOINT_FAILED` error and POSTs to `onError`.
 - **Timing**: Progress is sent at least once at the start (0%) and end (100%), and optionally at intermediate points.
 - **No guarantee of delivery**: The native host does not retry failed progress POSTs; it only cancels if a non-2xx response is received.
 
-## 7. Payload Grouping (Optional)
-To reduce payload size when signing multiple items with identical type, options, callbacks, and upload routes, use a grouping mechanism:
+## 7. Object Grouping (Required for Bulk)
+To reduce request size and enforce protocol efficiency, requests with multiple items sharing configuration **MUST** use `objectGroups`:
+
 ```json
-"payloadGroups": [
+"objectGroups": [
   {
     "dataType": "text",
     "callback": { "onSuccess": "...", "onError": "...", "progress": "...", "payload": {...} },
-    "upload": { "uploadUrl": "...", "httpMethod": "POST", "fieldName": "file", "fileName": "<payloadId>", "signedContentType": "string" },
-    "items": [
-      { "payloadId": "p1", "content": { "mode": "inline", "encoding": "utf8", "value": "..." } },
-      { "payloadId": "p2", "content": { "mode": "inline", "encoding": "utf8", "value": "..." } }
+    "upload": { "uploadUrl": "...", "httpMethod": "POST", "fieldName": "file", "fileName": "<objectId>", "signedContentType": "string" },
+    "objects": [
+      { "id": "p1", "content": { "mode": "inline", "encoding": "utf8", "content": "..." } },
+      { "id": "p2", "content": { "mode": "inline", "encoding": "utf8", "content": "..." } }
     ]
   }
 ]
 ```
-- `dataType` and signing options (`pdfOptions`, `xmlOptions` if applicable) are shared across all items in the group.
+- `dataType` (and `pdfOptions`/`xmlOptions` if applicable) are shared across all items in the group.
 - `callback` and `upload` are shared across all items in the group.
-- Each item retains its own `payloadId` and `content`.
-- `fileName` in `upload` can use a placeholder (e.g., `<payloadId>`) which the native host expands per item. The native host uploads the signed hash or binary data (depending on signature format) with the expanded file name.
-- Metadata is provided at the request level (see Section 8) and applies to all items; it is the caller's responsibility to include meaningful context.
+- Each item in `objects` has:
+  - `id`: Unique identifier for the item (replaces `payloadId`).
+  - `content`: content definition.
+- `fileName` in `upload` should use `<objectId>` placeholder to generate unique filenames.
 
-**Note**: A request must contain **either** `payloads` **or** `payloadGroups`, never both.
+**Note**: A request must contain **either** `objects` (for distinct configs) **or** `objectGroups` (for shared configs), never both.
 
 ## 8. Metadata
 `metadata` is a free-form object for caller-specific context. The extension/native app treats it as opaque but echoes it back in responses. Recommended keys: `appId`, `businessContext`, `userDisplayHint`.
@@ -109,9 +114,9 @@ To reduce payload size when signing multiple items with identical type, options,
   "appId": "<caller app id>",
   "cert": { "certId": "<serial or thumbprint>", "label": "<optional UI label>" },
   "metadata": { "any": "context provided by caller" },
-  "payloads": [
+  "objects": [
     {
-      "payloadId": "p1",
+      "id": "p1",
       "dataType": "pdf",
       "content": { "mode": "remote", "downloadUrl": "https://.../report/1.pdf", "headers": {"X-API-Key": "<key>"}, "mimeType": "application/pdf" },
       "pdfOptions": { "label": "Student Report" },
@@ -124,10 +129,10 @@ To reduce payload size when signing multiple items with identical type, options,
 
 **Notes on Request Structure:**
 - `appId` and `metadata` are **required** (metadata may be empty `{}`).
-- A request must contain **either** `payloads` **or** `payloadGroups`, never both.
+- A request must contain **either** `objects` **or** `objectGroups`, never both.
 - `pdfOptions` is required if `dataType: "pdf"`, omitted otherwise.
 - `xmlOptions` is required if `dataType: "xml"`, omitted otherwise.
-- All headers sent to endpoints (progress, upload, callback) come from the `headers` object in the `content` property of each payload.
+- All headers sent to endpoints (progress, upload, callback) come from the `headers` object in the `content` property of each object.
 
 ## 10. Extension → Native Host Message
 The extension validates the sender origin (see Security) and forwards a normalized message (no downloading performed by the extension):
@@ -138,9 +143,9 @@ The extension validates the sender origin (see Security) and forwards a normaliz
   "appId": "<caller app id>",
   "cert": { "certId": "..." },
   "metadata": { "any": "context provided by caller" },
-  "payloads": [
+  "objects": [
     {
-      "payloadId": "p1",
+      "id": "p1",
       "dataType": "pdf",
       "content": { "mode": "remote", "downloadUrl": "https://...", "headers": {"X-API-Key": "<key>"}, "mimeType": "application/pdf" },
       "pdfOptions": { "label": "Student Report" },
@@ -159,13 +164,13 @@ The extension validates the sender origin (see Security) and forwards a normaliz
   "status": "ok" | "error" | "partial",
   "results": [
     {
-      "payloadId": "p1",
+      "id": "p1",
       "status": "ok",
       "uploadResult": { "statusCode": 200, "responseBody": "..." },
       "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2025-12-10T10:00:00Z" }
     }
   ],
-  "errors": [ { "code": "SIGN_FAILED", "message": "...", "payloadId": "p1" } ],
+  "errors": [ { "code": "SIGN_FAILED", "message": "...", "id": "p1" } ],
   "metrics": { "totalMs": 1234 }
 }
 ```
@@ -185,7 +190,7 @@ The extension returns the native response (plus any extension-level errors) to t
 - **User Prompts**: Optionally prompt the user with a summary (who is asking, how many items, types).
 
 ## 15. Examples
-### A. Sign two inline strings (individual payloads)
+### A. Sign two inline strings (Grouped)
 ```json
 {
   "protocolVersion": "1.0",
@@ -193,20 +198,20 @@ The extension returns the native response (plus any extension-level errors) to t
   "appId": "simur3",
   "cert": { "certId": "SERIAL-ABC" },
   "metadata": { "batchId": "batch-001" },
-  "payloads": [
+  "objectGroups": [
     {
-      "payloadId": "g1",
       "dataType": "text",
-      "content": { "mode": "inline", "encoding": "utf8", "value": "185632|1500|2000|8|false|false" },
-      "callback": { "onSuccess": "https://example.com/ok", "onError": "https://example.com/err", "progress": "https://example.com/prog", "payload": {"id": 1} },
-      "upload": { "uploadUrl": "https://example.com/upload/1", "httpMethod": "POST", "fieldName": "file", "fileName": "g1", "signedContentType": "string" }
-    },
-    {
-      "payloadId": "g2",
-      "dataType": "text",
-      "content": { "mode": "inline", "encoding": "utf8", "value": "165612|2500|4000|0|true|false" },
-      "callback": { "onSuccess": "https://example.com/ok", "onError": "https://example.com/err", "progress": "https://example.com/prog", "payload": {"id": 2} },
-      "upload": { "uploadUrl": "https://example.com/upload/2", "httpMethod": "POST", "fieldName": "file", "fileName": "g2", "signedContentType": "string" }
+      "callback": {
+        "onSuccess": "https://example.com/ok",
+        "onError": "https://example.com/err",
+        "progress": "https://example.com/prog",
+        "payload": {"id": 1}
+      },
+      "upload": { "uploadUrl": "https://example.com/upload/1", "httpMethod": "POST", "fieldName": "file", "fileName": "<objectId>", "signedContentType": "string" },
+      "objects": [
+        { "id": "g1", "content": { "mode": "inline", "encoding": "utf8", "content": "185632|1500|2000|8|false|false" } },
+        { "id": "g2", "content": { "mode": "inline", "encoding": "utf8", "content": "165612|2500|4000|0|true|false" } }
+      ]
     }
   ]
 }
@@ -220,9 +225,9 @@ The extension returns the native response (plus any extension-level errors) to t
   "appId": "simur3",
   "cert": { "certId": "SERIAL-ABC" },
   "metadata": { "documentType": "report", "courseId": "CS101" },
-  "payloads": [
+  "objects": [
     {
-      "payloadId": "r1",
+      "id": "r1",
       "dataType": "pdf",
       "content": {
         "mode": "remote",
@@ -246,8 +251,8 @@ The extension returns the native response (plus any extension-level errors) to t
 }
 ```
 
-### C. Sign multiple grades (grouped payloads)
-Instead of duplicating payloads with identical options:
+### C. Sign multiple grades (grouped objects)
+Instead of duplicating objects with identical options:
 ```json
 {
   "protocolVersion": "1.0",
@@ -255,7 +260,7 @@ Instead of duplicating payloads with identical options:
   "appId": "simur3",
   "cert": { "certId": "SERIAL-XYZ" },
   "metadata": { "semester": "2025-S1", "department": "Engineering" },
-  "payloadGroups": [
+  "objectGroups": [
     {
       "dataType": "text",
       "callback": {
@@ -269,21 +274,21 @@ Instead of duplicating payloads with identical options:
         "httpMethod": "POST",
         "headers": {"X-API-Key": "<key>"},
         "fieldName": "file",
-        "fileName": "<payloadId>",
+        "fileName": "<objectId>",
         "signedContentType": "string"
       },
-      "items": [
+      "objects": [
         {
-          "payloadId": "grade-101",
-          "content": { "mode": "inline", "encoding": "utf8", "value": "185632|1500|2000|8|false|false" }
+          "id": "grade-101",
+          "content": { "mode": "inline", "encoding": "utf8", "content": "185632|1500|2000|8|false|false" }
         },
         {
-          "payloadId": "grade-102",
-          "content": { "mode": "inline", "encoding": "utf8", "value": "165612|2500|4000|0|true|false" }
+          "id": "grade-102",
+          "content": { "mode": "inline", "encoding": "utf8", "content": "165612|2500|4000|0|true|false" }
         },
         {
-          "payloadId": "grade-103",
-          "content": { "mode": "inline", "encoding": "utf8", "value": "175490|1800|3500|2|false|true" }
+          "id": "grade-103",
+          "content": { "mode": "inline", "encoding": "utf8", "content": "175490|1800|3500|2|false|true" }
         }
       ]
     }
