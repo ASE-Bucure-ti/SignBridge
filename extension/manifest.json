@@ -3,6 +3,7 @@
   "name": "SignBridge",
   "version": "1.0.0",
   "description": "Generic Web HSM Signing Protocol Adapter",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmnfAdhrtLywl3TzzBnuiW0PMVF6Do5DM2X7AzM3nmxb8MbwL1pj4Gfv+EaAI4cgFdY3Ce0tI4AgP6wasUsMKMV5kLPTH9qSjE5EU52R01jyPkY32oFvr8KIbahXBv2cjPI1hG2Tl8Jq9k2EJ52B0HswJ0Pz77zC02qz6E12wgwuZkkuLqUnQ4ufF9wMiFYR9rzpqPOvxsCjc4jjAdxKPT/VfiKR7BO5DQT/f5842Au+/bGk6HOrPZBZYWQRKxpwPuBbqlVM9mfWbssvxFTOrG6K5V7pvGzNtgPEx4flKvHTNORAnobPhgv/nSkIrOaluh/meqOOt0LQhV8uBHU5e5wIDAQAB",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
