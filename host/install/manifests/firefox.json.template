@@ -1,0 +1,9 @@
+{
+  "name": "com.ase.signer",
+  "description": "SignBridge — Generic Web HSM Signing Native Host",
+  "path": "%%PATH%%",
+  "type": "stdio",
+  "allowed_extensions": [
+    "signbridge@ase.ro"
+  ]
+}

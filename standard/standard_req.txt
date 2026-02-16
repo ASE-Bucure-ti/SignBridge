@@ -1,0 +1,272 @@
+CR 11 – Definiții endpointuri
+
+1. Detalii
+Pentru accesarea endpoint urilor trebuie sa existe conexiune de mediul QA de SIMUR3
+(VPN ovpn-202 sau, posibil, doar rețeaua ASE)
+
+2. Payload ul către extensie
+Payload ul pentru extensie va fi compus din:
+
+a. certId
+i. tip string
+ii. reprezintă serial numberul certificatului ales de utilizator in SIMUR3
+iii. in funcție de acesta se va caută certificatul in LocalStore pentru
+semnare
+
+b. element – este un obiect cu următoarele proprietăți
+i. type
+
+a. tip int cu una din valorile de la punctul 3.1
+
+ii. elements
+
+a. tip array de identificatoare long
+b. reprezintă lista de identificatoare pentru elementele ce se
+doresc a se semna
+
+c. report – care reprezintă id-urile rapoartelor care se vor semna
+i. type
+
+a. tip int cu una din valorile de la punctul 3.2
+
+ii. reports
+
+a. tip array de identificatoare long pentru rapoarte
+
+3. Endpointuri:
+2.1. GetData
+a) url: https://identity-dev.smr.net.ase.ro/api/DigitalSign
+b) verb: GET
+c) payload (tip GetDataRequest) cu următoarele proprietăți:
+a. type
+i. tip int cu una din valorile de la punctul 3
+b. identifiers
+i. lista de id-uri de tip long pentru obiectele ce se doresc a se prelua din
+SIMUR3
+
+d) response (tip GetDataResponse) cu următoarele proprietăți
+a. type
+
+i. tip int cu una din valorile de la punctul 3.1
+ii. objects
+i. array de obiecte de tipul GetDataObject:
+ii. GetDataObject conține:
+- id
+a. tip long
+b. reprezintă identificatorul obiectului ce se dorește a se
+semna
+- value
+a. tip string nullable
+b. reprezintă valoare obiectului ce se dorește a se semna
+
+iii. array cu obiecte de tipul GetDataReport:
+iv. GetDataReport conține:
+- id
+a. tip long
+b. reprezintă identificatorul obiectului ce se dorește a se
+semna
+- content
+a. tip array de byte
+b. reprezintă conținutul raportului pdf
+- label
+a. tip string nullable
+b. reprezintă labelul unde se va afișa semnătura
+
+2.2. SaveData
+a) url: https://identity-dev.smr.net.ase.ro/api/DigitalSign
+b) verb: POST
+c) payload (tip SaveDataRequest) cu următoarele proprietăți
+i. signedObjects
+i. array de obiecte de tipul SaveDataSignedObjects:
+ii. SaveDataSignedObjects conține:
+- id
+a. tip long
+b. reprezintă identificatorul obiectului semnat ce se dorește a
+se salva
+- value
+a. tip string
+b. reprezintă semnarea obiectului respectiv sub forma de
+string
+- type
+a. tip int cu una din valorile de la punctul 3.1
+
+ii. report
+i. obiect de tipul SaveDataReport:
+ii. SaveDataReport conține:
+- id
+a. tip long
+
+b. reprezintă identificatorul raportului semnat ce se dorește a
+se salva
+- content
+a. tip array de byte
+b. reprezintă conținutul raportului pdf semnat
+- type
+a. tip int cu una din valorile de la punctul 3.2
+e) response (tip SaveDataResponse) cu următoarele proprietăți
+a. statusCode
+i. tip int
+ii. reprezintă codul de eroare in urma salvării (este un HttpCode)
+b. errorMessage
+i. tip string
+ii. va reprezenta un mesaj de eroare in cazul in care salvarea nu va fi
+efectuata cu succes
+
+4. Nomenclatorul Type
+3.1. Tip pentru date de semnat - pentru care se așteaptă doar semnarea unui string
+
+- GRADE = 10
+- EDUCATIONAL_PLAN = 11
+
+3.2. Tip pentru rapoarte - pentru care se așteaptă semnarea unui pdf
+
+- CATALOGUE = 100
+- GRID = 101
+- DISCIPLINE_FILE = 102
+
+5. Exemple
+4.1 Payload pentru extensie
+{
+"certId" : "354634543534534534534",
+"element" :
+{
+"type" : 10,
+"elements" :
+[
+1,
+2
+]
+},
+"report" :
+{
+"type" : 100,
+"report" :
+[
+
+1,
+2
+]
+}
+}
+4.2 GetRequestData exemplu
+{
+"type" : 10,
+"identifiers" :
+{
+"1",
+"2"
+}
+}
+{
+"type" : 101,
+"identifiers" :
+{
+"1",
+"2"
+}
+}
+
+4.3 GetResponseData exemplu
+{
+"type" : 10,
+"objects" :
+[
+{
+"id" : 1,
+"value" : "185632|1500|2000|8|false|false"
+},
+{
+"id" : 2,
+"value" : "165612|2500|4000|0|true|false"
+}
+],
+"report" :
+[
+{
+"id" : 1,
+"content" : "JVBERi0xLjMKJZOMi54gUmVwb3J0TGFCBQREYgZG9…………"
+"label" : "Demo"
+}
+]
+}
+{
+"type" : 11,
+"objects" :
+[
+
+{
+"id" : 1,
+"value" : "185632|1500|2000|8|false|false"
+},
+{
+"id" : 2,
+"value" : "165612|2500|4000|0|true|false"
+}
+]
+}
+{
+"type" : 101,
+"report" :
+[
+{
+"id" : 1,
+"content" : "JVBERi0xLjMKJZOMi54gUmVwb3J0TGFCBQREYgZG9…………"
+"label" : "Demo"
+}
+]
+}
+4.4 SaveDataRequest exemplu
+{
+"signedObjects" :
+[
+{
+"id" : 1,
+"type" : 10,
+"value" : "sfgdfhhgffge5645yrthgfhjghjgsfdsfafadfsgffdgdf"
+},
+{
+"id" : 2,
+"type" : 10,
+"value" : "345etredgtjudofigjr8egjrogjsd;gjkdsjgf;f8dksfk"
+}
+],
+"report" :
+{
+"id" : 1,
+"type" : 100,
+"content" : "JVBERi0xLjMKJZOMi54gUmVwb3J0TGFCBQREYgZG9…………"
+}
+}
+{
+"signedObjects" :
+[
+{
+"id" : 1,
+"type" : 10,
+"value" : "sfgdfhhgffge5645yrthgfhjghjgsfdsfafadfsgffdgdf"
+},
+
+{
+"id" : 2,
+"type" : 10,
+"value" : "345etredgtjudofigjr8egjrogjsd;gjkdsjgf;f8dksfk"
+}
+]
+}
+{
+"report" :
+{
+"id" : 1,
+"type" : 100,
+"content" : "JVBERi0xLjMKJZOMi54gUmVwb3J0TGFCBQREYgZG9…………"
+}
+}
+4.5 SaveDataResponse exemplu
+{
+"statusCode" : 200,
+"errorMessage" : null
+}
+{
+"statusCode" : 404,
+"errorMessage" : "Object not found in the database"
+}

@@ -1,7 +1,7 @@
 # Generic Web HSM Signing Protocol - Specification v1.0
 
-**Version:** 1.0.2
-**Date:** January 23, 2026
+**Version:** 1.0.3
+**Date:** February 14, 2026
 
 ---
 
@@ -16,7 +16,7 @@
 7. [Object Grouping](#7-object-grouping)
 8. [Delivery & Callbacks](#8-delivery-and-callbacks)
 9. [Complete Request Schema](#9-complete-request-schema)
-10. [Complete Response Schema](#10-complete-response-schema)
+10. [Acknowledgment Response Schema](#10-acknowledgment-response-schema)
 11. [Message Flow Diagrams](#11-message-flow-diagrams)
 12. [Full Worked Examples](#12-full-worked-examples)
 13. [Error Handling](#13-error-handling)
@@ -40,8 +40,9 @@ This protocol covers:
 ### 1.3 Design Principles
 1. **No Business Logic in Signing Stack**: The extension and native host are generic signing utilities. All business logic (what to sign, where to send) is defined by the calling web application.
 2. **No Inline Binary**: PDF and binary content is NEVER transmitted inline. The native host fetches content from URLs provided by the caller.
-3. **Callback-Based Delivery**: Signed content is uploaded directly by the native host to endpoints specified by the caller. No signed content is returned through the message chain.
-4. **Hardware-Only Signing**: Only PKCS#11 hardware tokens are supported. No software certificates.
+3. **Fire-and-Forget Acknowledgment**: The extension validates the request, forwards it to the native host, and immediately returns a synchronous acknowledgment (`"accepted"` or `"error"`). The web application does NOT wait for signing to complete.
+4. **Callback-Based Result Delivery**: Signed content and status updates are delivered exclusively by the native host via HTTP callbacks (`onSuccess`, `onError`, `progress`) to the caller's backend. No signing results flow back through the extension.
+5. **Hardware-Only Signing**: Only PKCS#11 hardware tokens are supported. No software certificates.
 
 ### 1.4 Roles
 
@@ -65,12 +66,13 @@ This protocol covers:
 | Leg | Transport | Format |
 |-----|-----------|--------|
 | Web App → Extension | `window.postMessage()` | JSON |
-| Extension → Web App | `window.postMessage()` | JSON |
+| Extension → Web App | `window.postMessage()` | JSON (acknowledgment only) |
 | Extension → Native Host | Chrome Native Messaging (stdin) | JSON |
-| Native Host → Extension | Chrome Native Messaging (stdout) | JSON |
 | Native Host → Content Server | HTTPS GET | Binary/Text |
 | Native Host → Upload Server | HTTPS POST (raw bytes) | Binary/Text |
 | Native Host → Callback Server | HTTPS POST | JSON |
+
+> **Note (v1.0.3):** The native host no longer sends a response back to the extension via stdout. Signing results are delivered exclusively through callbacks.
 
 ### 2.3 What Each Component Does
 
@@ -78,22 +80,23 @@ This protocol covers:
 - Generate unique `requestId` (UUID)
 - Construct complete signing request with all URLs
 - Provide authentication headers for all external endpoints
-- Handle final response from extension
-- Implement callbacks endpoints (onSuccess, onError, progress)
+- Handle acknowledgment from extension (`"accepted"` or `"error"`)
+- Implement callback endpoints (`onSuccess`, `onError`, optionally `progress`)
+- Use callbacks as the sole source of signing results
 
 #### Extension Responsibilities:
 - Validate sender origin against allowlist
 - Validate request schema
 - Forward request to native host
-- Forward response to web app
-- **Does NOT**: Download content, modify payloads, or perform signing
+- Return synchronous acknowledgment (accepted/error) to web app
+- **Does NOT**: Wait for signing to complete, relay results, download content, modify payloads, or perform signing
 
 #### Native Host Responsibilities:
-- Download content from provided each `downloadUrl`
+- Download content from each provided `downloadUrl`
 - Perform cryptographic signing via PKCS#11
 - Upload signed content to provided `uploadUrl`
-- POST status updates to callbacks endpoints
-- Return completion status to extension
+- POST status updates to callback endpoints (`onSuccess`, `onError`, optionally `progress`)
+- Exit when processing is complete
 
 ---
 
@@ -520,7 +523,7 @@ Your upload endpoint MUST:
 - Return HTTP 2xx on success
 
 ### 8.4 Callback Configuration
-Defines endpoints for status notifications.
+Defines endpoints for status notifications. **Callbacks are the sole mechanism for delivering signing results** (v1.0.3). The extension returns only a synchronous acknowledgment; all actual outcomes (success, failure, progress) are reported by the native host directly to the caller's backend via these endpoints.
 
 ```json
 {
@@ -539,10 +542,12 @@ Defines endpoints for status notifications.
 |-------|------|----------|-------------|
 | `onSuccess` | string | YES | URL called after successful signing + upload |
 | `onError` | string | YES | URL called on any failure |
-| `progress` | string | NO | URL for progress updates during signing |
+| `progress` | string | NO | URL for progress updates during signing. If omitted, the native host skips progress reporting with no impact on the signing workflow. |
 | `headers` | object | NO | HTTP headers for callback requests |
 
 > **Note**: The request-level `metadata` object (see Section 9.4) is automatically echoed in all callback payloads. There is no separate metadata field in the callbacks configuration.
+
+> **Note (v1.0.3 — `progress` is explicitly optional):** Callers that do not need progress tracking MAY omit the `progress` field entirely. Implementing a stub endpoint is not required. The native host MUST NOT fail or alter its behavior when `progress` is absent — it simply skips progress reporting and proceeds normally.
 
 ### 8.5 Callback Payloads
 
@@ -746,21 +751,19 @@ Opaque object echoed in responses. Use for caller-specific context.
 
 ---
 
-## 10. Complete Response Schema
+## 10. Acknowledgment Response Schema
 
-### 10.1 Response Structure (Extension → Web App)
+> **v1.0.3 Change:** The extension now returns an immediate acknowledgment instead of waiting for signing to complete. Actual signing results are delivered exclusively through callbacks (Section 8).
+
+### 10.1 Acknowledgment Structure (Extension → Web App)
 
 ```json
 {
   "protocolVersion": "1.0",
   "requestId": "<uuid-from-request>",
-  "status": "ok" | "error" | "partial",
-  "results": [ ... ],
+  "status": "accepted" | "error",
   "errors": [ ... ],
-  "metadata": { ... },
-  "metrics": {
-    "totalMs": 1234
-  }
+  "metadata": { ... }
 }
 ```
 
@@ -770,52 +773,23 @@ Opaque object echoed in responses. Use for caller-specific context.
 |-------|------|----------|-------------|
 | `protocolVersion` | string | YES | Echoed from request |
 | `requestId` | string | YES | Echoed from request |
-| `status` | string | YES | Overall status (see below) |
-| `results` | array | YES | Per-object results |
-| `errors` | array | NO | Array of errors (if any) |
+| `status` | string | YES | Acknowledgment status (see below) |
+| `errors` | array | NO | Array of validation errors (only when `status` is `"error"`) |
 | `metadata` | object | YES | Echoed from request |
-| `metrics` | object | NO | Performance metrics |
 
 ### 10.3 Status Values
 
 | Status | Meaning |
 |--------|---------|
-| `"ok"` | All objects signed and uploaded successfully |
-| `"partial"` | Some objects succeeded, some failed |
-| `"error"` | All objects failed or request-level error |
+| `"accepted"` | Request is valid, forwarded to native host, and is being processed. Actual results will arrive via `onSuccess` / `onError` callbacks. |
+| `"error"` | Request-level validation failure. The request was NOT forwarded to the native host. See `errors` array for details. |
 
-### 10.4 Result Object
-
-```json
-{
-  "id": "report-001",
-  "status": "ok",
-  "uploadResult": {
-    "statusCode": 200,
-    "responseBody": "{\"message\":\"Uploaded successfully\"}"
-  },
-  "callbackResult": {
-    "status": "sent",
-    "endpoint": "onSuccess",
-    "timestamp": "2026-01-20T10:30:00Z"
-  }
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Object ID from request |
-| `status` | string | `"ok"` or `"error"` |
-| `uploadResult` | object | Upload endpoint response |
-| `callbackResult` | object | Callback delivery status |
-
-### 10.5 Error Object
+### 10.4 Error Object
 
 ```json
 {
-  "id": "report-002",
-  "code": "DOWNLOAD_FAILED",
-  "message": "HTTP 404 from downloadUrl"
+  "code": "BAD_REQUEST",
+  "message": "Missing required field: protocolVersion"
 }
 ```
 
@@ -825,9 +799,13 @@ Opaque object echoed in responses. Use for caller-specific context.
 | `code` | string | Error code (see Section 13) |
 | `message` | string | Human-readable description |
 
+> **Important:** Per-object errors (e.g., `DOWNLOAD_FAILED`, `SIGN_FAILED`, `UPLOAD_FAILED`) are no longer included in the acknowledgment. These are delivered by the native host to the caller's `onError` callback endpoint.
+
 ---
 
 ## 11. Message Flow Diagrams
+
+> **v1.0.3 Change:** The extension returns an acknowledgment immediately after forwarding the request. There is no response flow from native host → extension → web app. Signing results are delivered via callbacks.
 
 ### 11.1 Successful Single PDF Signing Flow
 
@@ -908,12 +886,13 @@ window.postMessage({
 }, "*");
 ```
 
-#### Step 2: Extension Validates and Forwards
+#### Step 2: Extension Validates and Returns Acknowledgment
 
 The extension:
 1. Checks `event.origin` against allowlist
 2. Validates request schema
 3. Forwards unchanged to native host via Chrome Native Messaging
+4. **Immediately returns acknowledgment** (`"accepted"`) to web app — does NOT wait for signing to complete
 
 ```json
 // Message sent to Native Host (stdin)
@@ -1057,55 +1036,44 @@ X-API-Key: university-api-key-12345
 }
 ```
 
-#### Step 8: Native Host Returns Response to Extension
+#### Step 8: Extension Returns Acknowledgment to Web App
+
+While steps 3-7 above are executing in the native host, the extension has **already** returned an acknowledgment to the web app (during Step 2):
 
 ```json
 {
   "protocolVersion": "1.0",
   "requestId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "ok",
-  "results": [
-    {
-      "id": "report-001",
-      "status": "ok",
-      "uploadResult": {
-        "statusCode": 200,
-        "responseBody": "{\"status\": \"received\", \"documentId\": \"DOC-2026-00123\"}"
-      },
-      "callbackResult": {
-        "status": "sent",
-        "endpoint": "onSuccess",
-        "timestamp": "2026-01-20T10:30:45Z"
-      }
-    }
-  ],
+  "status": "accepted",
   "metadata": {
     "studentId": "STU-2026-001",
     "documentType": "grade-report"
-  },
-  "metrics": {
-    "totalMs": 2345
   }
 }
 ```
 
-#### Step 9: Extension Returns Response to Web App
+#### Step 9: Web App Handles Acknowledgment
 
 ```javascript
-// Web App receives via postMessage listener
+// Web App receives acknowledgment via postMessage listener
 window.addEventListener("message", (event) => {
   if (event.data.type === "HSM_SIGN_RESPONSE") {
-    const response = event.data.data;
-    // response contains the exact JSON from Step 8
+    const ack = event.data.data;
     
-    if (response.status === "ok") {
-      console.log("All documents signed successfully!");
-      // The signed document is already uploaded to the server
-      // The callback has already notified our backend
+    if (ack.status === "accepted") {
+      console.log("Request accepted — waiting for callbacks...");
+      // The native host is processing asynchronously.
+      // Actual results will arrive at the onSuccess/onError callback endpoints.
+      // The web app's backend should handle callback payloads.
+    } else if (ack.status === "error") {
+      console.error("Request rejected:", ack.errors);
+      // Request-level validation error (e.g., missing field, bad schema)
     }
   }
 });
 ```
+
+> **v1.0.3 Note:** The web app does NOT receive signing results through `postMessage`. The success/error callback endpoints defined in the request are the sole delivery channel for results. This design ensures signing continues even if the user navigates away or refreshes the page.
 
 ---
 
@@ -1204,38 +1172,17 @@ SHA256:a1b2c3d4e5f6...BASE64_SIGNATURE_HERE...
 {
   "protocolVersion": "1.0",
   "requestId": "661f9511-f3a0-42e5-b817-557766550001",
-  "status": "ok",
-  "results": [
-    {
-      "id": "grade-STU001",
-      "status": "ok",
-      "uploadResult": { "statusCode": 200, "responseBody": "{\"gradeId\":\"grade-STU001\",\"status\":\"signed\"}" },
-      "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2026-01-20T11:00:01Z" }
-    },
-    {
-      "id": "grade-STU002",
-      "status": "ok",
-      "uploadResult": { "statusCode": 200, "responseBody": "{\"gradeId\":\"grade-STU002\",\"status\":\"signed\"}" },
-      "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2026-01-20T11:00:02Z" }
-    },
-    {
-      "id": "grade-STU003",
-      "status": "ok",
-      "uploadResult": { "statusCode": 200, "responseBody": "{\"gradeId\":\"grade-STU003\",\"status\":\"signed\"}" },
-      "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2026-01-20T11:00:03Z" }
-    }
-  ],
+  "status": "accepted",
   "metadata": {
     "batchId": "BATCH-2026-CS101-FINAL",
     "courseCode": "CS101",
     "semester": "2025-2026-S1",
     "professorId": "PROF-001"
-  },
-  "metrics": {
-    "totalMs": 4521
   }
 }
 ```
+
+> **v1.0.3:** The web app receives only the acknowledgment. Per-object results (`grade-STU001`, `grade-STU002`, `grade-STU003`) are delivered individually to the `onSuccess` callback endpoint as each grade is signed and uploaded.
 
 ---
 
@@ -1321,44 +1268,24 @@ SHA256:a1b2c3d4e5f6...BASE64_SIGNATURE_HERE...
 
 ---
 
-### 12.4 Example D: Error Response (Partial Failure)
+### 12.4 Example D: Partial Failure
 
 **Scenario**: 3 documents requested, 1 fails to download.
 
-#### Response (Extension → Web App)
+#### Acknowledgment (Extension → Web App)
 
 ```json
 {
   "protocolVersion": "1.0",
   "requestId": "883g1733-h5c2-64g7-d039-779988770003",
-  "status": "partial",
-  "results": [
-    {
-      "id": "doc-001",
-      "status": "ok",
-      "uploadResult": { "statusCode": 200, "responseBody": "OK" },
-      "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2026-01-20T12:00:01Z" }
-    },
-    {
-      "id": "doc-003",
-      "status": "ok",
-      "uploadResult": { "statusCode": 200, "responseBody": "OK" },
-      "callbackResult": { "status": "sent", "endpoint": "onSuccess", "timestamp": "2026-01-20T12:00:03Z" }
-    }
-  ],
-  "errors": [
-    {
-      "id": "doc-002",
-      "code": "DOWNLOAD_FAILED",
-      "message": "HTTP 404: Document not found at downloadUrl"
-    }
-  ],
-  "metadata": { "batchId": "batch-123" },
-  "metrics": { "totalMs": 3456 }
+  "status": "accepted",
+  "metadata": { "batchId": "batch-123" }
 }
 ```
 
-**Note**: The native host also called `onError` for `doc-002`:
+#### Callbacks from Native Host
+
+The native host calls `onSuccess` for `doc-001` and `doc-003`, and `onError` for `doc-002`:
 
 ```json
 POST /callback/error
@@ -1374,6 +1301,8 @@ POST /callback/error
   "metadata": { "batchId": "batch-123" }
 }
 ```
+
+> **v1.0.3:** Partial failures are no longer reported in the acknowledgment (`"partial"` status is removed). Each object's outcome is reported individually through callbacks. The web app's backend is responsible for aggregating results and detecting partial failures.
 
 ---
 
@@ -1470,32 +1399,57 @@ Your `/signed-document` endpoint MUST:
 | `CANCELLED_BY_USER` | 499 | User cancelled the operation | User action required |
 | `INTERNAL_ERROR` | 500 | Unexpected internal error | Contact support |
 
-### 13.2 Error Response Structure
+### 13.2 Synchronous vs Asynchronous Errors (v1.0.3)
+
+With the fire-and-forget model, errors are delivered through two channels:
+
+#### Synchronous Errors (in acknowledgment)
+Returned immediately by the extension in the `"error"` acknowledgment. These are **request-level validation failures** that prevent the request from being forwarded to the native host.
+
+Applicable codes: `BAD_REQUEST`, `UNSUPPORTED_VERSION`, `INTERNAL_ERROR` (native host unavailable).
 
 ```json
 {
   "protocolVersion": "1.0",
   "requestId": "...",
   "status": "error",
-  "results": [],
   "errors": [
     {
-      "id": "object-id-if-applicable",
-      "code": "ERROR_CODE",
-      "message": "Human readable description"
+      "code": "BAD_REQUEST",
+      "message": "Missing required field: protocolVersion"
     }
   ],
+  "metadata": {}
+}
+```
+
+#### Asynchronous Errors (via callbacks)
+Delivered by the native host to the `onError` callback endpoint during processing. These are **per-object runtime errors** encountered after the request was accepted.
+
+Applicable codes: `CERT_NOT_FOUND`, `DOWNLOAD_FAILED`, `SIGN_FAILED`, `UPLOAD_FAILED`, `CALLBACK_FAILED`, `PROGRESS_ENDPOINT_FAILED`, `TIMEOUT`, `CANCELLED_BY_USER`.
+
+```json
+POST /callback/error
+{
+  "objectId": "doc-002",
+  "requestId": "...",
+  "status": "failed",
+  "error": {
+    "code": "DOWNLOAD_FAILED",
+    "message": "HTTP 404 from downloadUrl"
+  },
+  "timestamp": "2026-01-20T12:00:02Z",
   "metadata": { ... }
 }
 ```
 
 ### 13.3 Request-Level vs Object-Level Errors
 
-**Request-Level Error** (entire request fails):
+**Request-Level Error** (synchronous — returned in acknowledgment):
+The entire request is rejected before being forwarded to the native host.
 ```json
 {
   "status": "error",
-  "results": [],
   "errors": [
     {
       "code": "BAD_REQUEST",
@@ -1505,18 +1459,20 @@ Your `/signed-document` endpoint MUST:
 }
 ```
 
-**Object-Level Error** (some objects fail):
+**Object-Level Error** (asynchronous — delivered via `onError` callback):
+Individual objects fail during processing. Other objects in the same request may succeed.
 ```json
+POST /callback/error
 {
-  "status": "partial",
-  "results": [ { "id": "obj-1", "status": "ok", ... } ],
-  "errors": [
-    {
-      "id": "obj-2",
-      "code": "DOWNLOAD_FAILED",
-      "message": "HTTP 404 from downloadUrl"
-    }
-  ]
+  "objectId": "obj-2",
+  "requestId": "...",
+  "status": "failed",
+  "error": {
+    "code": "DOWNLOAD_FAILED",
+    "message": "HTTP 404 from downloadUrl"
+  },
+  "timestamp": "...",
+  "metadata": { ... }
 }
 ```
 
@@ -1595,6 +1551,7 @@ Sending API keys via `postMessage` to the extension is **SAFE** because:
 | 1.0 | 2026-01-20 | Zeek Liviu | Initial release |
 | 1.0.1 | 2026-01-22 | Zeek Liviu | Clarified Section 7: `mode` and `downloadUrl` at group level with `<objectId>` placeholder for efficient bulk PDF signing. Added Example E for 500-document batch. |
 | 1.0.2 | 2026-01-23 | Zeek Liviu | Simplified Section 8: removed `fieldName`/`fileName` from upload, introduced `<objectId>` placeholder in `uploadUrl`, changed to raw bytes POST. Removed `metadata` from callbacks config (request-level `metadata` is now echoed in all callbacks). Added `uploadResult` and `error` object documentation. Removed redundant `mimeType`/`fileName` from content. Updated all examples. |
+| 1.0.3 | 2026-02-14 | Zeek Liviu | **Fire-and-forget acknowledgment model**: Extension now returns an immediate `"accepted"` / `"error"` acknowledgment instead of waiting for signing to complete. Removed `results`, `metrics`, `ResultObject`, and `"partial"` / `"ok"` status from extension response. Signing results (success, error, progress) are delivered exclusively via callbacks. Reinforced `progress` callback as explicitly optional (no stub required). Updated Sections 1.3, 2.2, 2.3, 8.4, 10, 11, 12, 13. |
 
 ---
 

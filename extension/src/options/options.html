@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SignBridge Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>SignBridge Configuration</h1>
+        <p class="subtitle">Generic Web HSM Signing Protocol v1.0</p>
+      </header>
+
+      <main>
+        <section class="card">
+          <h2>Allowed Origins</h2>
+          <p class="description">
+            Add the web applications authorized to communicate with the native
+            signing host. Only origins listed here can request signatures.
+          </p>
+
+          <form id="add-origin-form">
+            <div class="input-group">
+              <input
+                type="url"
+                id="new-origin"
+                placeholder="https://app.example.com"
+                required
+                pattern="https?://.*"
+              />
+              <button type="submit" class="btn primary">Add Origin</button>
+            </div>
+            <p class="hint">
+              Must be a valid URL starting with http:// or https://
+            </p>
+          </form>
+
+          <ul id="origin-list" class="origin-list">
+            <!-- Populated by options.ts -->
+          </ul>
+        </section>
+
+        <section class="card info-card">
+          <h3>About</h3>
+          <div class="info-row">
+            <span>Extension Version:</span>
+            <span id="ext-version">1.0.0</span>
+          </div>
+          <div class="info-row">
+            <span>Protocol Version:</span>
+            <span>1.0</span>
+          </div>
+          <div class="info-row">
+            <span>Native Host:</span>
+            <span class="code">com.ase.signer</span>
+          </div>
+        </section>
+      </main>
+
+      <div id="toast" class="toast hidden">Settings saved</div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>
