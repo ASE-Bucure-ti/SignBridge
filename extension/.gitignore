@@ -3,3 +3,8 @@ dist/
 *.js.map
 .DS_Store
 Thumbs.db
+
+
+# excluding production zips
+
+*.zip

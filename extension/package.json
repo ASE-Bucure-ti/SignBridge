@@ -7,6 +7,9 @@
     "build:chrome": "webpack --env target=chrome --mode production",
     "build:firefox": "webpack --env target=firefox --mode production",
     "build": "npm run build:chrome && npm run build:firefox",
+    "pack:chrome": "npm run build:chrome && cd dist/chrome && tar -acf ../../signbridge-chrome.zip * && cd ../..",
+    "pack:firefox": "npm run build:firefox && cd dist/firefox && tar -acf ../../signbridge-firefox.zip * && cd ../..",
+    "pack": "npm run pack:chrome && npm run pack:firefox",
     "dev:chrome": "webpack --env target=chrome --mode development --watch",
     "dev:firefox": "webpack --env target=firefox --mode development --watch",
     "clean": "rimraf dist"

@@ -42,6 +42,14 @@ module.exports = (env, argv) => {
             from:
               target === "firefox" ? "manifest.firefox.json" : "manifest.json",
             to: "manifest.json",
+            // Strip the "key" field for production Chrome builds (CWS manages it)
+            transform: isProduction
+              ? (content) => {
+                  const manifest = JSON.parse(content.toString());
+                  delete manifest.key;
+                  return JSON.stringify(manifest, null, 2);
+                }
+              : undefined,
           },
           { from: "src/options/options.html", to: "options/options.html" },
           { from: "src/options/options.css", to: "options/options.css" },
