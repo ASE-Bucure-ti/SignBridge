@@ -30,6 +30,10 @@ elif system == "Darwin":
     lib = os.path.join("libs", "libeToken.dylib")
     if os.path.exists(lib):
         pkcs11_binaries.append((lib, "."))
+    # libeToken.dylib depends on OpenSSL 1.1 via @loader_path
+    libcrypto = os.path.join("libs", "libcrypto.1.1.dylib")
+    if os.path.exists(libcrypto):
+        pkcs11_binaries.append((libcrypto, "."))
 
 # ─── Analysis ───────────────────────────────────────────────────────────────
 

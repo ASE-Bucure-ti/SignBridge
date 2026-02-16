@@ -13,22 +13,51 @@ echo " SignBridge - Production Build (macOS)"
 echo "========================================"
 echo
 
-# ── Check Python ────────────────────────────────────────────────────────
-if ! command -v python3 &>/dev/null; then
-    echo "ERROR: Python 3 is not installed"
-    echo "Install via: brew install python3  or  xcode-select --install"
-    exit 1
+# ── Find a suitable Python (>= 3.10) ───────────────────────────────────
+PYTHON=""
+for candidate in python3.13 python3.12 python3.11 python3.10; do
+    if command -v "$candidate" &>/dev/null; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    # Fall back to python3 and check its version
+    if command -v python3 &>/dev/null; then
+        PY_VER=$(python3 -c 'import sys; print(sys.version_info.minor)')
+        if [ "$PY_VER" -ge 10 ]; then
+            PYTHON="python3"
+        else
+            echo "ERROR: Python >= 3.10 is required (found 3.$PY_VER)"
+            echo "Install via: brew install python@3.12"
+            exit 1
+        fi
+    else
+        echo "ERROR: Python 3 is not installed"
+        echo "Install via: brew install python@3.12"
+        exit 1
+    fi
 fi
 
 echo "[1/7] Python version:"
-python3 --version
+$PYTHON --version
 
 # ── Virtual environment ─────────────────────────────────────────────────
 if [ ! -d "venv" ]; then
     echo "[2/7] Creating virtual environment..."
-    python3 -m venv venv
+    $PYTHON -m venv venv
 else
-    echo "[2/7] Using existing virtual environment..."
+    # Recreate if existing venv uses a different Python
+    VENV_PY_VER=$(./venv/bin/python3 --version 2>/dev/null || echo "none")
+    WANT_PY_VER=$($PYTHON --version)
+    if [ "$VENV_PY_VER" != "$WANT_PY_VER" ]; then
+        echo "[2/7] Recreating virtual environment ($VENV_PY_VER → $WANT_PY_VER)..."
+        rm -rf venv
+        $PYTHON -m venv venv
+    else
+        echo "[2/7] Using existing virtual environment..."
+    fi
 fi
 
 echo "[3/7] Activating virtual environment..."
@@ -46,6 +75,23 @@ if [ -f "$DYLIB" ]; then
     echo "Found: $DYLIB"
     # Remove quarantine attribute
     xattr -r -d com.apple.quarantine "$DYLIB" 2>/dev/null || true
+
+    # libeToken.dylib requires libcrypto.1.1.dylib via @loader_path
+    LIBCRYPTO="libs/libcrypto.1.1.dylib"
+    if [ ! -f "$LIBCRYPTO" ]; then
+        echo "Locating libcrypto.1.1.dylib (required by libeToken)..."
+        BREW_LIBCRYPTO="$(brew --prefix openssl@1.1 2>/dev/null)/lib/libcrypto.1.1.dylib"
+        if [ -f "$BREW_LIBCRYPTO" ]; then
+            cp "$BREW_LIBCRYPTO" "$LIBCRYPTO"
+            echo "Copied: $BREW_LIBCRYPTO → $LIBCRYPTO"
+        else
+            echo "WARNING: libcrypto.1.1.dylib not found. Install with: brew install openssl@1.1"
+            echo "The eToken PKCS#11 library may fail to load at runtime."
+        fi
+    else
+        echo "Found: $LIBCRYPTO"
+    fi
+    xattr -r -d com.apple.quarantine libs/ 2>/dev/null || true
 else
     echo "WARNING: $DYLIB not found"
     echo "HSM operations will require the vendor library at runtime"

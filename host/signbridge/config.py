@@ -81,19 +81,8 @@ def get_pkcs11_library_path() -> Optional[Path]:
     if lib_name is None:
         return None
 
-    # 1. PyInstaller bundle
-    if is_frozen():
-        bundled = Path(sys._MEIPASS) / lib_name  # type: ignore[attr-defined]
-        if bundled.exists():
-            return bundled
-
-    # 2. libs/ directory (development layout)
-    libs_dir = Path(__file__).resolve().parent.parent / "libs"
-    dev_path = libs_dir / lib_name
-    if dev_path.exists():
-        return dev_path
-
-    # 3. Platform-specific system paths
+    # 1. Platform-specific system paths (preferred on macOS/Linux because the
+    #    system-installed library communicates with the vendor daemon)
     system_candidates: list[str] = []
     if system == "Windows":
         system_candidates = [
@@ -111,11 +100,24 @@ def get_pkcs11_library_path() -> Optional[Path]:
         system_candidates = [
             "/usr/local/lib/libeToken.dylib",
             "/Library/Frameworks/eToken.framework/Versions/Current/libeToken.dylib",
+            "/Library/Frameworks/eToken.framework/Versions/A/libeToken.dylib",
         ]
 
     for candidate in system_candidates:
         p = Path(candidate)
         if p.exists():
             return p
+
+    # 2. PyInstaller bundle (fallback when vendor middleware is not installed)
+    if is_frozen():
+        bundled = Path(sys._MEIPASS) / lib_name  # type: ignore[attr-defined]
+        if bundled.exists():
+            return bundled
+
+    # 3. libs/ directory (development layout, last resort)
+    libs_dir = Path(__file__).resolve().parent.parent / "libs"
+    dev_path = libs_dir / lib_name
+    if dev_path.exists():
+        return dev_path
 
     return None
