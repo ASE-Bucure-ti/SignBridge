@@ -1,0 +1,107 @@
+#!/bin/bash
+# ════════════════════════════════════════════════════════════════════════
+#  SignBridge — macOS post-install script
+#
+#  Runs after the .pkg installs files. Registers the native messaging
+#  host for all supported browsers for the installing user.
+# ════════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+APP_NAME="SignBridge"
+HOST_NAME="com.ase.signer"
+CHROME_EXT_ID="hlpdphlmjodbaodlaoikcjccjoahgomi"
+FIREFOX_EXT_ID="signbridge@ase.ro"
+EXE_PATH="/Applications/${APP_NAME}/SignBridge"
+
+# If installed via GUI, $USER may be root — find the real console user
+if [ "$(id -u)" -eq 0 ]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "$USER")
+    USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+else
+    CONSOLE_USER="$USER"
+    USER_HOME="$HOME"
+fi
+
+echo "SignBridge: post-install for user $CONSOLE_USER ($USER_HOME)"
+
+# ─── Chrome-family manifest ────────────────────────────────────────────
+chrome_manifest() {
+    cat <<MANIFEST
+{
+  "name": "${HOST_NAME}",
+  "description": "SignBridge — Generic Web HSM Signing Native Host",
+  "path": "${EXE_PATH}",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://${CHROME_EXT_ID}/"
+  ]
+}
+MANIFEST
+}
+
+# ─── Firefox manifest ──────────────────────────────────────────────────
+firefox_manifest() {
+    cat <<MANIFEST
+{
+  "name": "${HOST_NAME}",
+  "description": "SignBridge — Generic Web HSM Signing Native Host",
+  "path": "${EXE_PATH}",
+  "type": "stdio",
+  "allowed_extensions": [
+    "${FIREFOX_EXT_ID}"
+  ]
+}
+MANIFEST
+}
+
+# ─── Write manifest for a browser ──────────────────────────────────────
+write_manifest() {
+    local browser_name="$1"
+    local manifest_dir="$2"
+    local manifest_content="$3"
+    local manifest_file="${manifest_dir}/${HOST_NAME}.json"
+
+    mkdir -p "$manifest_dir"
+    echo "$manifest_content" > "$manifest_file"
+    chmod 644 "$manifest_file"
+
+    # If running as root, fix ownership to the actual user
+    if [ "$(id -u)" -eq 0 ]; then
+        chown "$CONSOLE_USER" "$manifest_file"
+        chown "$CONSOLE_USER" "$manifest_dir" 2>/dev/null || true
+    fi
+
+    echo "  ✓ ${browser_name}: ${manifest_file}"
+}
+
+echo "Registering native messaging host..."
+
+CHROME_JSON=$(chrome_manifest)
+FIREFOX_JSON=$(firefox_manifest)
+
+# Chrome
+write_manifest "Chrome" \
+    "${USER_HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts" \
+    "$CHROME_JSON"
+
+# Edge
+write_manifest "Edge" \
+    "${USER_HOME}/Library/Application Support/Microsoft Edge/NativeMessagingHosts" \
+    "$CHROME_JSON"
+
+# Brave
+write_manifest "Brave" \
+    "${USER_HOME}/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
+    "$CHROME_JSON"
+
+# Firefox
+write_manifest "Firefox" \
+    "${USER_HOME}/Library/Application Support/Mozilla/NativeMessagingHosts" \
+    "$FIREFOX_JSON"
+
+# ─── Remove quarantine from installed files ─────────────────────────────
+xattr -r -d com.apple.quarantine "/Applications/${APP_NAME}" 2>/dev/null || true
+
+echo "SignBridge: post-install complete. Restart browsers to activate."
+exit 0
