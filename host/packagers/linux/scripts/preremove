@@ -1,0 +1,51 @@
+#!/bin/bash
+# ════════════════════════════════════════════════════════════════════════
+#  SignBridge — Linux pre-remove script
+#
+#  Runs before the package is uninstalled. Removes native messaging
+#  host manifests for all users.
+# ════════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+HOST_NAME="com.ase.signer"
+
+echo "SignBridge: removing native messaging registrations..."
+
+# ─── Remove manifests for a single user ─────────────────────────────────
+remove_for_user() {
+    local user_home="$1"
+    local user_name="$2"
+
+    local MANIFEST_DIRS=(
+        "${user_home}/.config/google-chrome/NativeMessagingHosts"
+        "${user_home}/.config/chromium/NativeMessagingHosts"
+        "${user_home}/.config/microsoft-edge/NativeMessagingHosts"
+        "${user_home}/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+        "${user_home}/.mozilla/native-messaging-hosts"
+    )
+
+    for dir in "${MANIFEST_DIRS[@]}"; do
+        local manifest="${dir}/${HOST_NAME}.json"
+        if [ -f "$manifest" ]; then
+            rm -f "$manifest"
+            echo "  ✓ Removed: $manifest"
+        fi
+    done
+}
+
+# ─── Iterate over all real users ────────────────────────────────────────
+while IFS=: read -r username _ uid _ _ home shell; do
+    if [ "$uid" -ge 1000 ] && [ -d "$home" ] && \
+       [[ "$shell" != */nologin ]] && [[ "$shell" != */false ]]; then
+        remove_for_user "$home" "$username"
+    fi
+done < /etc/passwd
+
+# Also clean up root
+if [ -d "/root" ]; then
+    remove_for_user "/root" "root"
+fi
+
+echo "SignBridge: pre-remove complete."
+exit 0

@@ -22,8 +22,9 @@ echo "[1/5] Python version:"
 python3 --version
 
 # ── Virtual environment ─────────────────────────────────────────────────
-if [ ! -d "venv" ]; then
+if [ ! -f "venv/bin/activate" ]; then
     echo "[2/5] Creating virtual environment..."
+    rm -rf venv
     python3 -m venv venv
 else
     echo "[2/5] Using existing virtual environment..."

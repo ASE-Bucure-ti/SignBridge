@@ -1,0 +1,123 @@
+#!/bin/bash
+# ════════════════════════════════════════════════════════════════════════
+#  SignBridge — Linux post-install script
+#
+#  Runs after package installation. Registers the native messaging
+#  host for all supported browsers for every real (non-system) user.
+# ════════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+HOST_NAME="com.ase.signer"
+CHROME_EXT_ID="hlpdphlmjodbaodlaoikcjccjoahgomi"
+FIREFOX_EXT_ID="signbridge@ase.ro"
+EXE_PATH="/opt/signbridge/SignBridge"
+
+echo "SignBridge: registering native messaging host..."
+
+# ─── Chrome-family manifest ────────────────────────────────────────────
+chrome_manifest() {
+    cat <<MANIFEST
+{
+  "name": "${HOST_NAME}",
+  "description": "SignBridge — Generic Web HSM Signing Native Host",
+  "path": "${EXE_PATH}",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://${CHROME_EXT_ID}/"
+  ]
+}
+MANIFEST
+}
+
+# ─── Firefox manifest ──────────────────────────────────────────────────
+firefox_manifest() {
+    cat <<MANIFEST
+{
+  "name": "${HOST_NAME}",
+  "description": "SignBridge — Generic Web HSM Signing Native Host",
+  "path": "${EXE_PATH}",
+  "type": "stdio",
+  "allowed_extensions": [
+    "${FIREFOX_EXT_ID}"
+  ]
+}
+MANIFEST
+}
+
+# ─── Write manifest for a browser ──────────────────────────────────────
+write_manifest() {
+    local browser_name="$1"
+    local manifest_dir="$2"
+    local manifest_content="$3"
+    local user_name="$4"
+    local manifest_file="${manifest_dir}/${HOST_NAME}.json"
+
+    mkdir -p "$manifest_dir"
+    echo "$manifest_content" > "$manifest_file"
+    chmod 644 "$manifest_file"
+
+    # Fix ownership if running as root
+    if [ "$(id -u)" -eq 0 ] && [ -n "$user_name" ]; then
+        chown "$user_name:$user_name" "$manifest_file"
+        chown "$user_name:$user_name" "$manifest_dir" 2>/dev/null || true
+    fi
+
+    echo "  ✓ ${browser_name}: ${manifest_file}"
+}
+
+# ─── Register for a single user ────────────────────────────────────────
+register_for_user() {
+    local user_home="$1"
+    local user_name="$2"
+
+    echo "  User: $user_name ($user_home)"
+
+    local CHROME_JSON
+    local FIREFOX_JSON
+    CHROME_JSON=$(chrome_manifest)
+    FIREFOX_JSON=$(firefox_manifest)
+
+    # Chrome
+    write_manifest "Chrome" \
+        "${user_home}/.config/google-chrome/NativeMessagingHosts" \
+        "$CHROME_JSON" "$user_name"
+
+    # Chromium
+    write_manifest "Chromium" \
+        "${user_home}/.config/chromium/NativeMessagingHosts" \
+        "$CHROME_JSON" "$user_name"
+
+    # Edge
+    write_manifest "Edge" \
+        "${user_home}/.config/microsoft-edge/NativeMessagingHosts" \
+        "$CHROME_JSON" "$user_name"
+
+    # Brave
+    write_manifest "Brave" \
+        "${user_home}/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
+        "$CHROME_JSON" "$user_name"
+
+    # Firefox
+    write_manifest "Firefox" \
+        "${user_home}/.mozilla/native-messaging-hosts" \
+        "$FIREFOX_JSON" "$user_name"
+}
+
+# ─── Iterate over all real users ────────────────────────────────────────
+# Register for all users with a login shell and home in /home/
+while IFS=: read -r username _ uid _ _ home shell; do
+    # Skip system users (UID < 1000) and users with nologin/false shells
+    if [ "$uid" -ge 1000 ] && [ -d "$home" ] && \
+       [[ "$shell" != */nologin ]] && [[ "$shell" != */false ]]; then
+        register_for_user "$home" "$username"
+    fi
+done < /etc/passwd
+
+# Also handle root if someone installs while logged in as root
+if [ "$(id -u)" -eq 0 ] && [ -d "/root" ]; then
+    register_for_user "/root" "root"
+fi
+
+echo "SignBridge: post-install complete. Restart browsers to activate."
+exit 0
