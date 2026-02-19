@@ -5,7 +5,7 @@ Supported:
   • text / json   → SHA-256 hash → PKCS#11 RSA signature → base64 string
   • pdf           → pyHanko visible/invisible signature via PKCS#11
   • binary        → raw PKCS#11 RSA signature over content bytes
-  • xml           → stubbed (returns UNSUPPORTED_TYPE)
+  • xml           → enveloped XMLDSig (W3C) via signxml + PKCS#11
 """
 
 from __future__ import annotations
@@ -174,16 +174,134 @@ def sign_xml(
     id_attribute: str | None = None,
 ) -> bytes:
     """
-    Sign an XML document — STUB.
+    Sign an XML document using enveloped XMLDSig (W3C) with PKCS#11.
 
-    XML digital signatures (XAdES / enveloped) are not yet implemented.
-    Raises UNSUPPORTED_TYPE per design decision.
+    Produces a standard XML Signature with RSA-SHA256, C14N 1.1, and the
+    signing certificate embedded in ``<ds:KeyInfo>``.
+
+    Parameters
+    ----------
+    data : bytes
+        Raw XML document bytes.
+    private_key : pkcs11.PrivateKey
+        PKCS#11 private key handle.
+    cert_info : CertificateInfo
+        Certificate info (used for ``<ds:X509Data>`` in the signature).
+    xpath : str | None
+        XPath expression that locates where the ``<ds:Signature>`` element
+        should be placed.  Two modes:
+
+        * If it matches an element whose local name is ``Signature`` —
+          that element is treated as an existing placeholder and replaced.
+        * If it matches any other element — the signature is inserted as
+          a child of that element.
+        * If it matches nothing (or is *None*) — the signature is appended
+          to the document root (default ``signxml`` behaviour).
+    id_attribute : str | None
+        Which attribute name to treat as the XML ID for reference-URI
+        resolution (e.g. ``"Id"``).  When *None*, ``signxml`` searches
+        for ``Id`` then ``ID``.
+
+    Returns
+    -------
+    bytes
+        The complete XML document with the embedded ``<ds:Signature>``.
     """
-    raise SigningError(
-        "UNSUPPORTED_TYPE",
-        "XML digital signatures are not yet implemented. "
-        "dataType 'xml' will be supported in a future release.",
-    )
+    try:
+        from lxml import etree
+        from signxml import XMLSigner
+        from signxml.algorithms import (
+            CanonicalizationMethod,
+            DigestAlgorithm,
+            SignatureConstructionMethod,
+            SignatureMethod,
+        )
+    except ImportError as exc:
+        raise SigningError("INTERNAL_ERROR", f"signxml not installed: {exc}") from exc
+
+    try:
+        # ── PKCS#11 key proxy ─────────────────────────────────────────
+        # signxml calls  key.sign(data, padding=…, algorithm=…)  using
+        # pure duck-typing (no isinstance check).  We delegate to the
+        # hardware token via SHA256_RSA_PKCS which hashes + signs on-chip.
+        class _PKCS11KeyProxy:
+            """Minimal proxy so signxml can call .sign() on a PKCS#11 key."""
+
+            def sign(self, data: bytes, **_kw: object) -> bytes:
+                return bytes(
+                    private_key.sign(data, mechanism=Mechanism.SHA256_RSA_PKCS)
+                )
+
+            @property
+            def key_size(self) -> int:
+                return cert_info.x509_cert.public_key().key_size
+
+        proxy_key = _PKCS11KeyProxy()
+
+        # ── Parse XML ─────────────────────────────────────────────────
+        root = etree.fromstring(data)
+
+        # ── Signature placement via xpath ─────────────────────────────
+        if xpath:
+            ns_dsig = "http://www.w3.org/2000/09/xmldsig#"
+            targets = root.xpath(xpath)
+
+            if targets and isinstance(targets[0], etree._Element):
+                target = targets[0]
+                local_name = etree.QName(target).localname
+
+                if local_name == "Signature":
+                    # Matched element IS a Signature (placeholder) — reuse it.
+                    target.tag = f"{{{ns_dsig}}}Signature"
+                    target.set("Id", "placeholder")
+                    for child in list(target):
+                        target.remove(child)
+                    target.text = None
+                    logger.debug("Reusing existing Signature element at xpath=%r", xpath)
+                else:
+                    # Matched element is the parent — insert placeholder as child.
+                    placeholder = etree.SubElement(
+                        target, f"{{{ns_dsig}}}Signature"
+                    )
+                    placeholder.set("Id", "placeholder")
+                    logger.debug("Signature placeholder inserted inside xpath=%r", xpath)
+            else:
+                logger.warning(
+                    "XPath %r matched nothing; signature will be appended to root", xpath
+                )
+
+        # ── Build signer ──────────────────────────────────────────────
+        signer = XMLSigner(
+            method=SignatureConstructionMethod.enveloped,
+            signature_algorithm=SignatureMethod.RSA_SHA256,
+            digest_algorithm=DigestAlgorithm.SHA256,
+            c14n_algorithm=CanonicalizationMethod.CANONICAL_XML_1_1,
+        )
+
+        # ── Sign ──────────────────────────────────────────────────────
+        signed_root = signer.sign(
+            root,
+            key=proxy_key,
+            cert=[cert_info.x509_cert],
+            id_attribute=id_attribute,
+        )
+
+        # ── Serialize ─────────────────────────────────────────────────
+        signed_xml = etree.tostring(
+            signed_root, xml_declaration=True, encoding="UTF-8"
+        )
+
+        logger.info(
+            "XML signed successfully (%d bytes → %d bytes)",
+            len(data),
+            len(signed_xml),
+        )
+        return signed_xml
+
+    except SigningError:
+        raise
+    except Exception as exc:
+        raise SigningError("SIGN_FAILED", f"XML signing failed: {exc}") from exc
 
 
 # ─── Dispatcher ─────────────────────────────────────────────────────────────
@@ -216,7 +334,8 @@ def sign_content(
     pdf_label : str | None
         Label for PDF visible signature.
     xml_xpath, xml_id_attribute : str | None
-        XML signature parameters (unused — stubbed).
+        XML signature parameters (xpath for placement, id_attribute for
+        reference-URI resolution).  See :func:`sign_xml`.
 
     Returns
     -------

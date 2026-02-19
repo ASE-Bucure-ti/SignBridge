@@ -82,6 +82,14 @@ a = Analysis(
         "cryptography.hazmat.primitives.asymmetric",
         "cryptography.hazmat.backends",
         "cryptography.hazmat.backends.openssl",
+        # signxml / lxml (XML signing)
+        "signxml",
+        "signxml.signer",
+        "signxml.verifier",
+        "signxml.algorithms",
+        "lxml",
+        "lxml.etree",
+        "lxml._elementpath",
         # asn1crypto
         "asn1crypto",
         "asn1crypto.x509",
