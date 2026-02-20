@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 HOST_NAME = "com.ase.signer"
-CHROME_EXTENSION_ID = "hlpdphlmjodbaodlaoikcjccjoahgomi"
+CHROME_EXTENSION_ID = "hjfiglgfjnfceahiccedeimkgabclkpc"
 FIREFOX_EXTENSION_ID = "signbridge@ase.ro"
 
 SYSTEM = platform.system()

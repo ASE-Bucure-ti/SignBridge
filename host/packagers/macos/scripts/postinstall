@@ -10,7 +10,7 @@ set -euo pipefail
 
 APP_NAME="SignBridge"
 HOST_NAME="com.ase.signer"
-CHROME_EXT_ID="hlpdphlmjodbaodlaoikcjccjoahgomi"
+CHROME_EXT_ID="hjfiglgfjnfceahiccedeimkgabclkpc"
 FIREFOX_EXT_ID="signbridge@ase.ro"
 EXE_PATH="/Applications/${APP_NAME}/SignBridge"
 

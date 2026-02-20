@@ -36,7 +36,7 @@ APP_NAME="SignBridge"
 APP_VERSION="1.0.0"
 BUNDLE_ID="com.ase.signbridge"
 HOST_NAME="com.ase.signer"
-CHROME_EXT_ID="hlpdphlmjodbaodlaoikcjccjoahgomi"
+CHROME_EXT_ID="hjfiglgfjnfceahiccedeimkgabclkpc"
 FIREFOX_EXT_ID="signbridge@ase.ro"
 INSTALL_DIR="/Applications/${APP_NAME}"
 

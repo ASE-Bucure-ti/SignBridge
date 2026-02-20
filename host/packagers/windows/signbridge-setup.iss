@@ -21,7 +21,7 @@
 #define HostName       "com.ase.signer"
 
 ; Chrome extension ID — must match extension/manifest.json key-derived ID
-#define ChromeExtID    "hlpdphlmjodbaodlaoikcjccjoahgomi"
+#define ChromeExtID    "hjfiglgfjnfceahiccedeimkgabclkpc"
 ; Firefox extension ID — must match extension/manifest.firefox.json
 #define FirefoxExtID   "signbridge@ase.ro"
 
