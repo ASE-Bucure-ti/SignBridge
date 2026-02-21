@@ -67,7 +67,7 @@ const exampleA: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'student-portal',
-    cert: { certId: '1B15EC34000000123D9B', label: 'University Signing Certificate' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7', label: 'University Signing Certificate' },
     metadata: { studentId: 'STU-2026-001', documentType: 'grade-report' },
     objects: [
       {
@@ -102,7 +102,7 @@ const exampleB: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'grades-system',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {
       batchId: 'BATCH-2026-CS101-FINAL',
       courseCode: 'CS101',
@@ -140,7 +140,7 @@ const exampleC: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'graduation-system',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { ceremony: 'GRAD-2026-SPRING', department: 'Computer Science' },
     objectGroups: [
       {
@@ -192,7 +192,7 @@ const exampleD: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'batch-system',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { batchId: 'batch-123' },
     objectGroups: [
       {
@@ -224,7 +224,7 @@ const exampleE: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'report-system',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { batchId: 'REPORTS-2026-SEMESTER1', totalDocuments: 500 },
     objectGroups: [
       {
@@ -260,7 +260,7 @@ const inlineText: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'text-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { type: 'receipt' },
     objects: [
       {
@@ -284,7 +284,7 @@ const inlineXml: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'xml-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { documentType: 'invoice-xml' },
     objects: [
       {
@@ -313,7 +313,7 @@ const inlineJson: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'json-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { documentType: 'invoice-json' },
     objects: [
       {
@@ -341,7 +341,7 @@ const remotePdf: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'pdf-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { documentType: 'contract' },
     objects: [
       {
@@ -371,7 +371,7 @@ const remoteBinary: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'binary-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { documentType: 'firmware' },
     objects: [
       {
@@ -399,7 +399,7 @@ const remoteXml: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'xml-remote-signer',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { documentType: 'report-xml' },
     objects: [
       {
@@ -432,7 +432,7 @@ const missingProtocolVersion: TestScenario = {
     const req = {
       requestId: id(),
       appId: 'test',
-      cert: { certId: '1B15EC34000000123D9B' },
+      cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
       metadata: {},
       objects: [
         {
@@ -460,7 +460,7 @@ const unsupportedVersion: TestScenario = {
     protocolVersion: '99.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -485,7 +485,7 @@ const missingRequestId: TestScenario = {
     const req = {
       protocolVersion: '1.0',
       appId: 'test',
-      cert: { certId: '1B15EC34000000123D9B' },
+      cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
       metadata: {},
       objects: [
         {
@@ -512,7 +512,7 @@ const missingAppId: TestScenario = {
     const req = {
       protocolVersion: '1.0',
       requestId: id(),
-      cert: { certId: '1B15EC34000000123D9B' },
+      cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
       metadata: {},
       objects: [
         {
@@ -567,7 +567,7 @@ const missingMetadata: TestScenario = {
       protocolVersion: '1.0',
       requestId: id(),
       appId: 'test',
-      cert: { certId: '1B15EC34000000123D9B' },
+      cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
       objects: [
         {
           id: 'obj-1',
@@ -593,7 +593,7 @@ const bothObjectsAndGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -627,7 +627,7 @@ const neitherObjectsNorGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
   }),
 };
@@ -643,7 +643,7 @@ const inlinePdfForbidden: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -669,7 +669,7 @@ const inlineBinaryForbidden: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -694,7 +694,7 @@ const pdfMissingPdfOptions: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -723,7 +723,7 @@ const xmlMissingXmlOptions: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -752,7 +752,7 @@ const duplicateObjectIds: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -784,7 +784,7 @@ const missingUploadUrlPlaceholder: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -812,7 +812,7 @@ const missingDownloadUrlPlaceholder: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objectGroups: [
       {
@@ -843,7 +843,7 @@ const emptyMetadata: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -868,7 +868,7 @@ const singleObjectInGroup: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { note: 'single item in group' },
     objectGroups: [
       {
@@ -894,7 +894,7 @@ const withCorrelationId: TestScenario = {
     requestId: id(),
     correlationId: `trace-${id()}`,
     appId: 'tracing-app',
-    cert: { certId: '1B15EC34000000123D9B', label: 'My Cert' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7', label: 'My Cert' },
     metadata: { traceId: 'abc-123' },
     objects: [
       {
@@ -919,7 +919,7 @@ const noProgressCallback: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'no-progress-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -946,7 +946,7 @@ const failingProgressEndpoint: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'progress-fail-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objects: [
       {
@@ -976,7 +976,7 @@ const remoteTextInGroup: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'remote-text-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: {},
     objectGroups: [
       {
@@ -1004,7 +1004,7 @@ const multipleGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'multi-group-app',
-    cert: { certId: '1B15EC34000000123D9B' },
+    cert: { certId: '5597194EEDB997AA539160ACA0568DB7' },
     metadata: { testType: 'multi-group' },
     objectGroups: [
       {
