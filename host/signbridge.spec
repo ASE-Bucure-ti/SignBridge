@@ -19,17 +19,20 @@ system = platform.system()
 pkcs11_binaries = []
 
 if system == "Windows":
-    lib = os.path.join("libs", "eTPKCS11.dll")
-    if os.path.exists(lib):
-        pkcs11_binaries.append((lib, "."))
+    for dll in ("eTPKCS11.dll", "idplug-pkcs11.dll"):
+        lib = os.path.join("libs", dll)
+        if os.path.exists(lib):
+            pkcs11_binaries.append((lib, "."))
 elif system == "Linux":
-    lib = os.path.join("libs", "libeTPkcs11.so")
-    if os.path.exists(lib):
-        pkcs11_binaries.append((lib, "."))
+    for so in ("libeTPkcs11.so", "libidplug-pkcs11.so"):
+        lib = os.path.join("libs", so)
+        if os.path.exists(lib):
+            pkcs11_binaries.append((lib, "."))
 elif system == "Darwin":
-    lib = os.path.join("libs", "libeToken.dylib")
-    if os.path.exists(lib):
-        pkcs11_binaries.append((lib, "."))
+    for dylib in ("libeToken.dylib", "libidplug-pkcs11.dylib"):
+        lib = os.path.join("libs", dylib)
+        if os.path.exists(lib):
+            pkcs11_binaries.append((lib, "."))
     # libeToken.dylib depends on OpenSSL 1.1 via @loader_path
     libcrypto = os.path.join("libs", "libcrypto.1.1.dylib")
     if os.path.exists(libcrypto):

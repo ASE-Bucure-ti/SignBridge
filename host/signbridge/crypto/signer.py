@@ -1,10 +1,13 @@
 """
 Signing operations — dispatches to the correct signer based on dataType.
 
+Supports both **RSA** and **ECC** (ECDSA) private keys.  The key type is
+detected at runtime via the PKCS#11 ``CKA_KEY_TYPE`` attribute.
+
 Supported:
-  • text / json   → SHA-256 hash → PKCS#11 RSA signature → base64 string
+  • text / json   → SHA-256 hash → PKCS#11 RSA/ECDSA signature → base64 string
   • pdf           → pyHanko visible/invisible signature via PKCS#11
-  • binary        → raw PKCS#11 RSA signature over content bytes
+  • binary        → raw PKCS#11 RSA/ECDSA signature over content bytes
   • xml           → enveloped XMLDSig (W3C) via signxml + PKCS#11
 """
 
@@ -16,7 +19,7 @@ import io
 from typing import TYPE_CHECKING
 
 import pkcs11
-from pkcs11 import Mechanism
+from pkcs11 import Attribute, KeyType, Mechanism
 
 from signbridge.utils.logging_setup import get_logger
 
@@ -35,6 +38,17 @@ class SigningError(Exception):
         self.message = message
 
 
+# ─── Key type detection ─────────────────────────────────────────────────────
+
+def _is_ecc_key(private_key: pkcs11.PrivateKey) -> bool:
+    """Return True if the PKCS#11 private key is ECC (EC/ECDSA)."""
+    try:
+        kt = private_key[Attribute.KEY_TYPE]
+        return kt == KeyType.EC
+    except Exception:
+        return False
+
+
 # ─── Public API ─────────────────────────────────────────────────────────────
 
 def sign_text(
@@ -45,20 +59,23 @@ def sign_text(
     Sign a text/json string.
 
     Returns the raw signature bytes (caller should base64-encode for upload).
-    Process: UTF-8 encode → SHA-256 → PKCS#11 RSA sign.
+    Process: UTF-8 encode → PKCS#11 sign (RSA-SHA256 or ECDSA-SHA256).
     """
     if isinstance(data, str):
         data = data.encode("utf-8")
 
-    digest = hashlib.sha256(data).digest()
-    logger.debug("Text SHA-256 digest: %s (%d bytes input)", digest.hex()[:16] + "...", len(data))
+    logger.debug("Signing text (%d bytes)", len(data))
 
     try:
-        signature = private_key.sign(
-            digest,
-            mechanism=Mechanism.SHA256_RSA_PKCS,
-        )
-        logger.info("Text signed successfully (%d byte signature)", len(signature))
+        if _is_ecc_key(private_key):
+            # ECDSA_SHA256 hashes internally — pass raw data.
+            signature = private_key.sign(data, mechanism=Mechanism.ECDSA_SHA256)
+            logger.info("Text signed with ECDSA-SHA256 (%d byte signature)", len(signature))
+        else:
+            # RSA — pre-hash then sign with SHA256_RSA_PKCS.
+            digest = hashlib.sha256(data).digest()
+            signature = private_key.sign(digest, mechanism=Mechanism.SHA256_RSA_PKCS)
+            logger.info("Text signed with RSA-SHA256 (%d byte signature)", len(signature))
         return bytes(signature)
     except Exception as exc:
         raise SigningError("SIGN_FAILED", f"PKCS#11 text signing failed: {exc}") from exc
@@ -150,17 +167,18 @@ def sign_binary(
     Sign raw binary data.
 
     Returns the raw signature bytes.
-    Process: SHA-256 → PKCS#11 RSA sign.
+    Process: PKCS#11 sign (RSA-SHA256 or ECDSA-SHA256).
     """
-    digest = hashlib.sha256(data).digest()
-    logger.debug("Binary SHA-256 digest: %s (%d bytes input)", digest.hex()[:16] + "...", len(data))
+    logger.debug("Signing binary (%d bytes)", len(data))
 
     try:
-        signature = private_key.sign(
-            digest,
-            mechanism=Mechanism.SHA256_RSA_PKCS,
-        )
-        logger.info("Binary signed successfully (%d byte signature)", len(signature))
+        if _is_ecc_key(private_key):
+            signature = private_key.sign(data, mechanism=Mechanism.ECDSA_SHA256)
+            logger.info("Binary signed with ECDSA-SHA256 (%d byte signature)", len(signature))
+        else:
+            digest = hashlib.sha256(data).digest()
+            signature = private_key.sign(digest, mechanism=Mechanism.SHA256_RSA_PKCS)
+            logger.info("Binary signed with RSA-SHA256 (%d byte signature)", len(signature))
         return bytes(signature)
     except Exception as exc:
         raise SigningError("SIGN_FAILED", f"PKCS#11 binary signing failed: {exc}") from exc
@@ -176,15 +194,17 @@ def sign_xml(
     """
     Sign an XML document using enveloped XMLDSig (W3C) with PKCS#11.
 
-    Produces a standard XML Signature with RSA-SHA256, C14N 1.1, and the
-    signing certificate embedded in ``<ds:KeyInfo>``.
+    Produces a standard XML Signature with SHA-256 digest, C14N 1.1, and
+    the signing certificate embedded in ``<ds:KeyInfo>``.
+    Automatically selects **RSA-SHA256** or **ECDSA-SHA256** based on the
+    private key type.
 
     Parameters
     ----------
     data : bytes
         Raw XML document bytes.
     private_key : pkcs11.PrivateKey
-        PKCS#11 private key handle.
+        PKCS#11 private key handle (RSA or ECC).
     cert_info : CertificateInfo
         Certificate info (used for ``<ds:X509Data>`` in the signature).
     xpath : str | None
@@ -220,17 +240,37 @@ def sign_xml(
         raise SigningError("INTERNAL_ERROR", f"signxml not installed: {exc}") from exc
 
     try:
+        # ── Detect key type ───────────────────────────────────────────
+        ecc = _is_ecc_key(private_key)
+        sig_method = SignatureMethod.ECDSA_SHA256 if ecc else SignatureMethod.RSA_SHA256
+        sign_mechanism = Mechanism.ECDSA_SHA256 if ecc else Mechanism.SHA256_RSA_PKCS
+        logger.debug("XML signing with %s", "ECDSA-SHA256" if ecc else "RSA-SHA256")
+
         # ── PKCS#11 key proxy ─────────────────────────────────────────
         # signxml calls  key.sign(data, padding=…, algorithm=…)  using
         # pure duck-typing (no isinstance check).  We delegate to the
-        # hardware token via SHA256_RSA_PKCS which hashes + signs on-chip.
+        # hardware token which hashes + signs on-chip.
+        #
+        # ECDSA format note:
+        #   PKCS#11 returns raw (r || s) concatenated bytes.
+        #   signxml expects DER-encoded ASN.1 SEQUENCE { r, s } (the
+        #   format produced by cryptography's ECC .sign()).  We convert
+        #   when the key is ECC.
         class _PKCS11KeyProxy:
             """Minimal proxy so signxml can call .sign() on a PKCS#11 key."""
 
             def sign(self, data: bytes, **_kw: object) -> bytes:
-                return bytes(
-                    private_key.sign(data, mechanism=Mechanism.SHA256_RSA_PKCS)
+                raw = bytes(
+                    private_key.sign(data, mechanism=sign_mechanism)
                 )
+                if ecc:
+                    # Convert raw (r || s) → DER-encoded ASN.1
+                    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+                    half = len(raw) // 2
+                    r = int.from_bytes(raw[:half], byteorder="big")
+                    s = int.from_bytes(raw[half:], byteorder="big")
+                    return encode_dss_signature(r, s)
+                return raw
 
             @property
             def key_size(self) -> int:
@@ -273,7 +313,7 @@ def sign_xml(
         # ── Build signer ──────────────────────────────────────────────
         signer = XMLSigner(
             method=SignatureConstructionMethod.enveloped,
-            signature_algorithm=SignatureMethod.RSA_SHA256,
+            signature_algorithm=sig_method,
             digest_algorithm=DigestAlgorithm.SHA256,
             c14n_algorithm=CanonicalizationMethod.CANONICAL_XML_1_1,
         )

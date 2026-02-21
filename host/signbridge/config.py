@@ -22,11 +22,22 @@ REMOTE_ONLY_TYPES = {"pdf", "binary"}
 # ─── Maximum payload size for inline content (1 MB, Standard §4.1) ─────────
 MAX_INLINE_SIZE_BYTES = 1 * 1024 * 1024
 
-# ─── PKCS#11 vendor library filenames per platform ─────────────────────────
-PKCS11_LIB_MAP = {
-    "Windows": "eTPKCS11.dll",
-    "Linux": "libeTPkcs11.so",
-    "Darwin": "libeToken.dylib",
+# ── PKCS#11 vendor libraries per platform ──────────────────────────────────
+# Each entry maps a platform to a list of (name, library_filename) tuples.
+# SignBridge will attempt to load ALL available libraries and merge their slots.
+PKCS11_LIBS = {
+    "Windows": [
+        ("SafeNet eToken", "eTPKCS11.dll"),
+        ("IDEMIA RO eID",  "idplug-pkcs11.dll"),
+    ],
+    "Linux": [
+        ("SafeNet eToken", "libeTPkcs11.so"),
+        ("IDEMIA RO eID",  "libidplug-pkcs11.so"),
+    ],
+    "Darwin": [
+        ("SafeNet eToken", "libeToken.dylib"),
+        ("IDEMIA RO eID",  "libidplug-pkcs11.dylib"),
+    ],
 }
 
 # ─── Content-Type mapping (Standard §8.3) ──────────────────────────────────
@@ -67,57 +78,91 @@ def resource_path(relative_path: str) -> Path:
     return base / relative_path
 
 
-def get_pkcs11_library_path() -> Optional[Path]:
-    """
-    Locate the PKCS#11 vendor library for the current platform.
-
-    Search order:
-      1. Bundled inside PyInstaller package (_MEIPASS)
-      2. libs/ directory next to the signbridge package
-      3. Common system paths
-    """
-    system = platform.system()
-    lib_name = PKCS11_LIB_MAP.get(system)
-    if lib_name is None:
-        return None
-
-    # 1. Platform-specific system paths (preferred on macOS/Linux because the
-    #    system-installed library communicates with the vendor daemon)
-    system_candidates: list[str] = []
-    if system == "Windows":
-        system_candidates = [
+# ── System-known paths for each library ─────────────────────────────────────
+_SYSTEM_PATHS: dict[str, dict[str, list[str]]] = {
+    "Windows": {
+        "eTPKCS11.dll": [
             r"C:\Windows\System32\eTPKCS11.dll",
             r"C:\Program Files\SafeNet\Authentication\SAC\x64\eTPKCS11.dll",
             r"C:\Program Files (x86)\SafeNet\Authentication\SAC\x32\eTPKCS11.dll",
-        ]
-    elif system == "Linux":
-        system_candidates = [
+        ],
+        "idplug-pkcs11.dll": [
+            r"C:\Program Files\IDEMIA\IDPlugClassic\DLLs\idplug-pkcs11.dll",
+            r"C:\Program Files (x86)\IDEMIA\IDPlugClassic\DLLs\idplug-pkcs11.dll",
+        ],
+    },
+    "Linux": {
+        "libeTPkcs11.so": [
             "/usr/lib/libeTPkcs11.so",
             "/usr/local/lib/libeTPkcs11.so",
             "/usr/lib/x86_64-linux-gnu/libeTPkcs11.so",
-        ]
-    elif system == "Darwin":
-        system_candidates = [
+        ],
+        "libidplug-pkcs11.so": [
+            "/usr/lib/libidplug-pkcs11.so",
+            "/usr/local/lib/libidplug-pkcs11.so",
+        ],
+    },
+    "Darwin": {
+        "libeToken.dylib": [
             "/usr/local/lib/libeToken.dylib",
             "/Library/Frameworks/eToken.framework/Versions/Current/libeToken.dylib",
             "/Library/Frameworks/eToken.framework/Versions/A/libeToken.dylib",
-        ]
+        ],
+        "libidplug-pkcs11.dylib": [
+            "/usr/local/lib/libidplug-pkcs11.dylib",
+        ],
+    },
+}
 
-    for candidate in system_candidates:
+
+def _find_library(lib_filename: str) -> Optional[Path]:
+    """Locate a single PKCS#11 library file across known paths."""
+    system = platform.system()
+
+    # 1. System-known paths
+    candidates = _SYSTEM_PATHS.get(system, {}).get(lib_filename, [])
+    for candidate in candidates:
         p = Path(candidate)
         if p.exists():
             return p
 
-    # 2. PyInstaller bundle (fallback when vendor middleware is not installed)
+    # 2. PyInstaller bundle
     if is_frozen():
-        bundled = Path(sys._MEIPASS) / lib_name  # type: ignore[attr-defined]
+        bundled = Path(sys._MEIPASS) / lib_filename  # type: ignore[attr-defined]
         if bundled.exists():
             return bundled
 
-    # 3. libs/ directory (development layout, last resort)
+    # 3. libs/ directory (development)
     libs_dir = Path(__file__).resolve().parent.parent / "libs"
-    dev_path = libs_dir / lib_name
+    dev_path = libs_dir / lib_filename
     if dev_path.exists():
         return dev_path
 
+    return None
+
+
+def get_pkcs11_library_paths() -> list[tuple[str, Path]]:
+    """
+    Locate ALL available PKCS#11 vendor libraries for the current platform.
+
+    Returns a list of ``(vendor_name, path)`` tuples for every library that
+    was found.  SignBridge will attempt to load each and merge their slots.
+    """
+    system = platform.system()
+    libs = PKCS11_LIBS.get(system, [])
+    found: list[tuple[str, Path]] = []
+    for vendor_name, lib_filename in libs:
+        path = _find_library(lib_filename)
+        if path is not None:
+            found.append((vendor_name, path))
+    return found
+
+
+def get_pkcs11_library_path() -> Optional[Path]:
+    """
+    Locate the first available PKCS#11 vendor library (legacy helper).
+    """
+    paths = get_pkcs11_library_paths()
+    if paths:
+        return paths[0][1]
     return None

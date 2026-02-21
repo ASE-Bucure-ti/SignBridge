@@ -62,6 +62,7 @@ class _Signals(QObject):
     signing_complete = pyqtSignal(dict)            # response dict
     signing_error = pyqtSignal(str)                # error message
     log_message = pyqtSignal(str)
+    tokens_refreshed = pyqtSignal(list)            # list of signing-capable slots
 
 
 # ─── Main window ────────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ class SignBridgeWindow(QMainWindow):
         self._cancel_requested = False
         self._response_sent = False
         self._signing_in_progress = False
+        self._token_refresh_in_progress = False
 
         self._init_ui()
         self._connect_signals()
@@ -212,6 +214,7 @@ class SignBridgeWindow(QMainWindow):
         self._signals.signing_complete.connect(self._on_signing_complete)
         self._signals.signing_error.connect(self._on_signing_error)
         self._signals.log_message.connect(self._append_log)
+        self._signals.tokens_refreshed.connect(self._on_tokens_refreshed)
 
     # ── PKCS#11 init ────────────────────────────────────────────────────
 
@@ -228,38 +231,97 @@ class SignBridgeWindow(QMainWindow):
             self._log(f"[ERROR] PKCS#11 init failed: {exc}")
 
     def _setup_token_refresh(self) -> None:
-        """Refresh token list every 5 seconds."""
+        """Refresh token list every 5 seconds (enumeration runs off-thread)."""
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_tokens)
         self._refresh_timer.start(5000)
 
     def _refresh_tokens(self) -> None:
+        """Kick off a background token enumeration (non-blocking)."""
         if not self._pkcs11.is_loaded:
             return
+        if self._token_refresh_in_progress:
+            return  # previous refresh still running — skip this tick
+        self._token_refresh_in_progress = True
+        t = threading.Thread(
+            target=self._token_refresh_worker, daemon=True, name="token-refresh"
+        )
+        t.start()
+
+    def _token_refresh_worker(self) -> None:
+        """Background thread: enumerate PKCS#11 slots (slow I/O)."""
         try:
-            self._slots = self._pkcs11.get_token_slots()
-            current_data = self._token_combo.currentData()
-
-            self._token_combo.blockSignals(True)
-            self._token_combo.clear()
-
-            for slot in self._slots:
-                token = slot.get_token()
-                label = token.label.strip()
-                display = f"{label} (slot {slot.slot_id})"
-                self._token_combo.addItem(display, slot)
-
-            # Restore previous selection if still present
-            if current_data is not None:
-                for i in range(self._token_combo.count()):
-                    if self._token_combo.itemData(i) == current_data:
-                        self._token_combo.setCurrentIndex(i)
-                        break
-
-            self._token_combo.blockSignals(False)
-            self._update_ui_state()
+            all_slots = self._pkcs11.get_token_slots()
+            signing_slots = [s for s in all_slots if self._is_signing_slot(s)]
+            self._signals.tokens_refreshed.emit(signing_slots)
         except Exception as exc:
             logger.debug("Token refresh error: %s", exc)
+        finally:
+            self._token_refresh_in_progress = False
+
+    def _on_tokens_refreshed(self, signing_slots: list) -> None:
+        """Main-thread handler: update the combo box with freshly enumerated slots."""
+        self._slots = signing_slots
+
+        # Remember the currently selected token by a stable key
+        # (slot objects change identity across enumerations).
+        prev_key = self._selected_token_key()
+
+        self._token_combo.blockSignals(True)
+        self._token_combo.clear()
+
+        restored = False
+        for idx, slot in enumerate(self._slots):
+            token = slot.get_token()
+            label = token.label.strip()
+            slot_key = (slot.slot_id, label)
+            display = f"{label} (slot {slot.slot_id})"
+            self._token_combo.addItem(display, slot)
+
+            if not restored and prev_key is not None and slot_key == prev_key:
+                self._token_combo.setCurrentIndex(idx)
+                restored = True
+
+        self._token_combo.blockSignals(False)
+        self._update_ui_state()
+
+    def _selected_token_key(self) -> tuple[int, str] | None:
+        """Return a stable (slot_id, label) key for the currently selected token."""
+        slot = self._token_combo.currentData()
+        if slot is None:
+            return None
+        try:
+            return (slot.slot_id, slot.get_token().label.strip())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_signing_slot(slot: Any) -> bool:
+        """
+        Heuristic filter: return True if the token in *slot* is likely
+        a signing-capable token (non-repudiation / advanced signature).
+
+        Known patterns:
+          • RO eID "ADVANCED SIGNATURE PIN" → True
+          • RO eID "PKI Application (User PIN)" → False (auth-only)
+          • SafeNet eToken → True (generic device, all are signing)
+          • Everything else → True (default include)
+        """
+        try:
+            label = slot.get_token().label.strip().upper()
+        except Exception:
+            return False  # can't even read the token → skip
+
+        # Explicit signing indicator keywords
+        if any(kw in label for kw in ("SIGNATURE", "SEMNARE", "SIGNING", "SIGN")):
+            return True
+
+        # Known auth-only pattern (RO eID authentication slot)
+        if "PKI APPLICATION" in label and "SIGNATURE" not in label:
+            return False
+
+        # Default: include (SafeNet eToken, generic HSMs, etc.)
+        return True
 
     # ── Stdin listener (background thread) ──────────────────────────────
 
