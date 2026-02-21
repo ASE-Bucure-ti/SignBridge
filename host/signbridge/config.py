@@ -98,6 +98,7 @@ _SYSTEM_PATHS: dict[str, dict[str, list[str]]] = {
             "/usr/lib/x86_64-linux-gnu/libeTPkcs11.so",
         ],
         "libidplug-pkcs11.so": [
+            "/usr/lib/idplugclassic/libidplug-pkcs11.so",
             "/usr/lib/libidplug-pkcs11.so",
             "/usr/local/lib/libidplug-pkcs11.so",
         ],

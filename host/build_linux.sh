@@ -38,10 +38,17 @@ echo "[4/5] Installing dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# ── Verify PKCS#11 library ──────────────────────────────────────────────
-if [ ! -f "libs/libeTPkcs11.so" ]; then
-    echo "WARNING: libs/libeTPkcs11.so not found"
-    echo "HSM operations will require the vendor library at runtime"
+# ── Verify PKCS#11 libraries ─────────────────────────────────────────────
+MISSING_LIBS=0
+for lib in "libs/libeTPkcs11.so" "libs/libidplug-pkcs11.so"; do
+    if [ ! -f "$lib" ]; then
+        echo "WARNING: $lib not found"
+        MISSING_LIBS=$((MISSING_LIBS + 1))
+    fi
+done
+if [ "$MISSING_LIBS" -gt 0 ]; then
+    echo "Some PKCS#11 vendor libraries are missing — those providers will"
+    echo "only work if the library is installed system-wide at runtime."
 fi
 
 # ── Clean previous build ───────────────────────────────────────────────
