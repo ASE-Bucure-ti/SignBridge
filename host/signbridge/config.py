@@ -110,6 +110,7 @@ _SYSTEM_PATHS: dict[str, dict[str, list[str]]] = {
             "/Library/Frameworks/eToken.framework/Versions/A/libeToken.dylib",
         ],
         "libidplug-pkcs11.dylib": [
+            "/Library/Application Support/com.idemia.idplug/lib/libidplug-pkcs11.dylib",
             "/usr/local/lib/libidplug-pkcs11.dylib",
         ],
     },

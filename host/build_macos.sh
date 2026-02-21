@@ -68,13 +68,15 @@ echo "[4/7] Installing dependencies..."
 pip install --upgrade pip wheel setuptools
 pip install -r requirements.txt
 
-# ── Verify PKCS#11 library ──────────────────────────────────────────────
-DYLIB="libs/libeToken.dylib"
-echo "[5/7] Checking PKCS#11 library..."
-if [ -f "$DYLIB" ]; then
-    echo "Found: $DYLIB"
-    # Remove quarantine attribute
-    xattr -r -d com.apple.quarantine "$DYLIB" 2>/dev/null || true
+# ── Verify PKCS#11 libraries ─────────────────────────────────────────────
+echo "[5/7] Checking PKCS#11 libraries..."
+MISSING_LIBS=0
+
+# --- SafeNet eToken ---
+ETOKEN_DYLIB="libs/libeToken.dylib"
+if [ -f "$ETOKEN_DYLIB" ]; then
+    echo "Found: $ETOKEN_DYLIB"
+    xattr -r -d com.apple.quarantine "$ETOKEN_DYLIB" 2>/dev/null || true
 
     # libeToken.dylib requires libcrypto.1.1.dylib via @loader_path
     LIBCRYPTO="libs/libcrypto.1.1.dylib"
@@ -91,10 +93,36 @@ if [ -f "$DYLIB" ]; then
     else
         echo "Found: $LIBCRYPTO"
     fi
-    xattr -r -d com.apple.quarantine libs/ 2>/dev/null || true
 else
-    echo "WARNING: $DYLIB not found"
-    echo "HSM operations will require the vendor library at runtime"
+    echo "WARNING: $ETOKEN_DYLIB not found"
+    MISSING_LIBS=$((MISSING_LIBS + 1))
+fi
+
+# --- IDEMIA RO eID ---
+IDPLUG_DYLIB="libs/libidplug-pkcs11.dylib"
+if [ -f "$IDPLUG_DYLIB" ]; then
+    echo "Found: $IDPLUG_DYLIB"
+    xattr -r -d com.apple.quarantine "$IDPLUG_DYLIB" 2>/dev/null || true
+else
+    echo "WARNING: $IDPLUG_DYLIB not found"
+    # Try to copy from system install if middleware is present
+    SYSTEM_DYLIB="/Library/Application Support/com.idemia.idplug/lib/libidplug-pkcs11.dylib"
+    if [ -f "$SYSTEM_DYLIB" ]; then
+        echo "Copying from system install: $SYSTEM_DYLIB"
+        cp "$SYSTEM_DYLIB" "$IDPLUG_DYLIB"
+        xattr -r -d com.apple.quarantine "$IDPLUG_DYLIB" 2>/dev/null || true
+        echo "Copied successfully."
+    else
+        MISSING_LIBS=$((MISSING_LIBS + 1))
+    fi
+fi
+
+# Remove quarantine from all libs
+xattr -r -d com.apple.quarantine libs/ 2>/dev/null || true
+
+if [ "$MISSING_LIBS" -gt 0 ]; then
+    echo "Some PKCS#11 vendor libraries are missing — those providers will"
+    echo "only work if the library is installed system-wide at runtime."
 fi
 
 # ── Clean previous build ───────────────────────────────────────────────
