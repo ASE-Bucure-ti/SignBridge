@@ -1,13 +1,15 @@
 """
 Certificate discovery and selection.
 
-Finds certificates on PKCS#11 tokens by serial number or thumbprint
-(the `certId` field from Standard §9.3).  Supports both RSA and ECC keys.
+Finds certificates on PKCS#11 tokens by serial number, thumbprint,
+or Common Name (the `certId` field from Standard §9.3).
+Supports both RSA and ECC keys.
 """
 
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from typing import Optional
 
 import pkcs11
@@ -21,7 +23,14 @@ from signbridge.utils.logging_setup import get_logger
 logger = get_logger("crypto.certificate")
 
 
-# ── Key-usage helpers ───────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────────────────
+
+def _normalize_for_matching(text: str) -> str:
+    """Strip diacritics, lowercase, collapse whitespace for fuzzy CN comparison."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    ascii_text = "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+    return " ".join(ascii_text.lower().split())
+
 
 def _has_non_repudiation(cert: x509.Certificate) -> bool:
     """Return True if the certificate has the *nonRepudiation* (contentCommitment) bit set."""
@@ -147,10 +156,13 @@ def find_certificate_by_id(
     """
     Find a certificate matching the given certId.
 
-    Matching logic:
+    Matching logic (first match wins):
       1. Exact match on serial number (hex, case-insensitive)
       2. Exact match on SHA-1 thumbprint (hex, case-insensitive)
       3. Substring match on serial (for partial serial numbers)
+      4. Contains match on Common Name (diacritics-insensitive).
+         When multiple certs match, signing certs (nonRepudiation) are
+         preferred over auth certs, then most recently issued wins.
 
     Returns None if no match found.
     """
@@ -174,6 +186,25 @@ def find_certificate_by_id(
         if needle in ci.serial_hex:
             logger.info("Certificate matched by partial serial: %s", ci)
             return ci
+
+    # 4. CN match (diacritics-insensitive, contains)
+    needle_norm = _normalize_for_matching(cert_id)
+    cn_matches = [
+        ci for ci in certs
+        if needle_norm in _normalize_for_matching(ci.subject_cn)
+        or _normalize_for_matching(ci.subject_cn) in needle_norm
+    ]
+    if cn_matches:
+        cn_matches.sort(
+            key=lambda c: (c.is_signing_cert, c.x509_cert.not_valid_before),
+            reverse=True,
+        )
+        logger.info(
+            "Certificate matched by CN (%d candidate(s), selected best): %s",
+            len(cn_matches),
+            cn_matches[0],
+        )
+        return cn_matches[0]
 
     logger.warning("No certificate matching certId=%r among %d certificates", cert_id, len(certs))
     return None
