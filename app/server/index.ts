@@ -9,7 +9,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type {
@@ -22,7 +22,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // ── State ────────────────────────────────────────────────────────────────────
 interface EventLogEntry {
@@ -223,6 +224,8 @@ function storeUpload(objectId: string, req: express.Request, endpoint: string): 
     ),
   };
   uploadStore.push(entry);
+  // Trigger cleanup if over threshold
+  maybeCleanup();
   return entry;
 }
 
@@ -397,8 +400,8 @@ app.get('/api/store/uploads/:id/download', (req, res) => {
   }
   const ext = entry.contentType.includes('pdf') ? 'pdf'
     : entry.contentType.includes('xml') ? 'xml'
-    : entry.contentType.includes('json') ? 'json'
-    : 'bin';
+      : entry.contentType.includes('json') ? 'json'
+        : 'bin';
   res.setHeader('Content-Type', entry.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${entry.objectId}.${ext}"`);
   res.setHeader('Content-Length', String(entry.data.length));
@@ -449,6 +452,9 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     server: 'SignBridge Mock Backend',
     version: '1.0.0',
+    uploads: uploadStore.length,
+    callbacks: callbackStore.length,
+    events: eventLog.length,
     endpoints: {
       download: [
         'GET /api/documents/download?id=<objectId>',
@@ -484,9 +490,70 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// ── Artifact Cleanup ─────────────────────────────────────────────────────────
+const MAX_UPLOADS = parseInt(process.env.MAX_UPLOADS || '200', 10);
+const MAX_CALLBACKS = parseInt(process.env.MAX_CALLBACKS || '500', 10);
+const MAX_EVENTS = parseInt(process.env.MAX_EVENTS || '1000', 10);
+const CLEANUP_INTERVAL_MS = parseInt(process.env.CLEANUP_INTERVAL_MS || '300000', 10); // 5 min
+const MAX_UPLOAD_AGE_MS = parseInt(process.env.MAX_UPLOAD_AGE_MS || '3600000', 10); // 1 hour
+
+function runCleanup(): void {
+  const now = Date.now();
+  const before = { uploads: uploadStore.length, callbacks: callbackStore.length, events: eventLog.length };
+
+  // Evict uploads older than MAX_UPLOAD_AGE_MS
+  uploadStore = uploadStore.filter(
+    (u) => now - new Date(u.receivedAt).getTime() < MAX_UPLOAD_AGE_MS,
+  );
+  // Cap uploads at MAX_UPLOADS (keep newest)
+  if (uploadStore.length > MAX_UPLOADS) {
+    uploadStore = uploadStore.slice(-MAX_UPLOADS);
+  }
+  // Cap callbacks
+  if (callbackStore.length > MAX_CALLBACKS) {
+    callbackStore = callbackStore.slice(-MAX_CALLBACKS);
+  }
+  // Cap events
+  if (eventLog.length > MAX_EVENTS) {
+    eventLog = eventLog.slice(-MAX_EVENTS);
+  }
+
+  const after = { uploads: uploadStore.length, callbacks: callbackStore.length, events: eventLog.length };
+  const cleaned = (before.uploads - after.uploads) + (before.callbacks - after.callbacks) + (before.events - after.events);
+  if (cleaned > 0) {
+    console.log(`🧹 Cleanup: removed ${before.uploads - after.uploads} uploads, ${before.callbacks - after.callbacks} callbacks, ${before.events - after.events} events`);
+  }
+}
+
+// Periodic cleanup
+setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+
+// Event-driven cleanup: run after every upload if over threshold
+function maybeCleanup(): void {
+  if (uploadStore.length > MAX_UPLOADS || callbackStore.length > MAX_CALLBACKS || eventLog.length > MAX_EVENTS) {
+    runCleanup();
+  }
+}
+
+// ── Serve Static Frontend (Production) ───────────────────────────────────────
+if (IS_PRODUCTION) {
+  const distPath = join(__dirname, '..', 'dist');
+  if (existsSync(distPath)) {
+    app.use(express.static(distPath));
+    // SPA fallback: serve index.html for all non-API routes
+    app.get('*', (_req, res) => {
+      res.sendFile(join(distPath, 'index.html'));
+    });
+    console.log(`📦 Serving static files from ${distPath}`);
+  } else {
+    console.warn('⚠️  dist/ not found — run "npm run build" first');
+  }
+}
+
 // ── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🟢 SignBridge Mock Backend running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🟢 SignBridge Mock Backend running on http://0.0.0.0:${PORT}`);
+  console.log(`   Mode: ${IS_PRODUCTION ? 'production' : 'development'}`);
   console.log(`   Health check: http://localhost:${PORT}/api/health\n`);
 });
 

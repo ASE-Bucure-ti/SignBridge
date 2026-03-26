@@ -7,8 +7,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { SignRequest } from '../../shared/protocol';
 
-/** Base URL the mock backend is reachable at (via Vite proxy) */
-const API = 'http://localhost:3001/api';
+/** Base URL the mock backend is reachable at (same origin in production, Vite proxy in dev) */
+const API = `${window.location.origin}/api`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

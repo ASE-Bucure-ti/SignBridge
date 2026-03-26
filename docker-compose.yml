@@ -1,0 +1,41 @@
+# =============================================================================
+# SignBridge Test App — Docker Compose with Traefik
+# Deploy to signbridge.ase.ro with Let's Encrypt TLS
+# =============================================================================
+# Assumes Traefik is running externally on the "web" network with a
+# cert resolver named "le". Adjust network/resolver names if different.
+# =============================================================================
+
+services:
+  signbridge-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: signbridge-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MAX_UPLOADS=200
+      - MAX_CALLBACKS=500
+      - MAX_EVENTS=1000
+      - MAX_UPLOAD_AGE_MS=3600000
+      - CLEANUP_INTERVAL_MS=300000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.signbridge.rule=Host(`signbridge.ase.ro`)"
+      - "traefik.http.routers.signbridge.entrypoints=websecure"
+      - "traefik.http.routers.signbridge.tls.certresolver=le"
+      - "traefik.http.services.signbridge.loadbalancer.server.port=3001"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.signbridge-http.rule=Host(`signbridge.ase.ro`)"
+      - "traefik.http.routers.signbridge-http.entrypoints=web"
+      - "traefik.http.routers.signbridge-http.middlewares=signbridge-https-redirect"
+      - "traefik.http.middlewares.signbridge-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.signbridge-https-redirect.redirectscheme.permanent=true"
+    networks:
+      - traefik_proxy
+
+networks:
+  traefik_proxy:
+    external: true

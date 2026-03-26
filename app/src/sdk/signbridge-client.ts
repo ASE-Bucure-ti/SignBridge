@@ -2,10 +2,13 @@
 // SignBridge Client SDK
 // Wraps window.postMessage for sending HSM_SIGN_REQUEST and receiving the
 // extension's acknowledgment (v1.0.3 fire-and-forget model).
+// On mobile, dispatches via signbridge:// deep link instead.
 // Actual signing results are delivered via callbacks to the backend.
 // =============================================================================
 
 import type { SignRequest, SignResponse, PostMessageRequest, PostMessageResponse } from '../../shared/protocol';
+
+export type SignBridgeTransport = 'extension' | 'deeplink';
 
 export interface SignBridgeOptions {
   /** Timeout in milliseconds (default: 10000 = 10s — ACK should come fast) */
@@ -14,6 +17,10 @@ export interface SignBridgeOptions {
   targetOrigin?: string;
   /** Called when the extension is detected / not detected */
   onExtensionCheck?: (detected: boolean) => void;
+  /** Force a specific transport instead of auto-detecting */
+  transport?: SignBridgeTransport;
+  /** Custom deep link scheme (default: 'signbridge') */
+  deepLinkScheme?: string;
 }
 
 export type SignBridgeEventType =
@@ -45,10 +52,32 @@ export class SignBridgeClient {
   private timeout: number;
   private targetOrigin: string;
   private listeners: EventListener[] = [];
+  private transport: SignBridgeTransport;
+  private deepLinkScheme: string;
 
   constructor(options: SignBridgeOptions = {}) {
     this.timeout = options.timeout ?? 10_000;
     this.targetOrigin = options.targetOrigin ?? '*';
+    this.deepLinkScheme = options.deepLinkScheme ?? 'signbridge';
+    this.transport = options.transport ?? this.detectTransport();
+  }
+
+  /** Auto-detect transport: mobile → deeplink, desktop → extension */
+  private detectTransport(): SignBridgeTransport {
+    if (typeof navigator === 'undefined') return 'extension';
+    const ua = navigator.userAgent;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    return isMobile ? 'deeplink' : 'extension';
+  }
+
+  /** Get the active transport */
+  getTransport(): SignBridgeTransport {
+    return this.transport;
+  }
+
+  /** Override the transport at runtime */
+  setTransport(transport: SignBridgeTransport): void {
+    this.transport = transport;
   }
 
   /** Subscribe to SDK lifecycle events */
@@ -71,10 +100,61 @@ export class SignBridgeClient {
 
   /**
    * Send a signing request and wait for the acknowledgment.
-   * Resolves with the ACK (status "accepted" or "error").
-   * Actual signing results are delivered via callbacks (v1.0.3).
+   * On desktop: postMessage to the extension, resolves with ACK.
+   * On mobile: opens signbridge:// deep link, resolves immediately
+   * with a synthetic "accepted" ACK (results come via callbacks).
    */
   sign(request: SignRequest): Promise<SignResponse> {
+    if (this.transport === 'deeplink') {
+      return this.signViaDeepLink(request);
+    }
+    return this.signViaExtension(request);
+  }
+
+  /**
+   * Deep link transport: encode the request as a signbridge:// URL and open it.
+   * The mobile app receives the payload, performs signing, and delivers
+   * results via the callbacks specified in the request. Returns a synthetic ACK.
+   */
+  private signViaDeepLink(request: SignRequest): Promise<SignResponse> {
+    const requestId = request.requestId;
+    try {
+      const json = JSON.stringify(request);
+      // Base64url encode (browser-safe)
+      const base64 = btoa(
+        String.fromCharCode(...new Uint8Array(new TextEncoder().encode(json)))
+      )
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      const deepLinkUrl = `${this.deepLinkScheme}://sign?payload=${base64}`;
+      this.emit({ type: 'request-sent', requestId, timestamp: Date.now() });
+
+      // Open deep link
+      window.location.href = deepLinkUrl;
+
+      // Return synthetic ACK — actual results come via callbacks
+      const ack: SignResponse = {
+        protocolVersion: request.protocolVersion,
+        requestId,
+        status: 'accepted',
+        metadata: { transport: 'deeplink' },
+      };
+      this.emit({ type: 'response-received', requestId, data: ack, timestamp: Date.now() });
+      return Promise.resolve(ack);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.emit({ type: 'error', requestId, error: errMsg, timestamp: Date.now() });
+      return Promise.reject(err);
+    }
+  }
+
+  /**
+   * Extension transport: postMessage to the SignBridge extension.
+   * Resolves with the ACK (status "accepted" or "error").
+   */
+  private signViaExtension(request: SignRequest): Promise<SignResponse> {
     return new Promise<SignResponse>((resolve, reject) => {
       const requestId = request.requestId;
       let settled = false;
@@ -141,6 +221,10 @@ export class SignBridgeClient {
    * Useful when you only care about callbacks.
    */
   sendOnly(request: SignRequest): void {
+    if (this.transport === 'deeplink') {
+      this.signViaDeepLink(request);
+      return;
+    }
     const envelope: PostMessageRequest = {
       type: 'HSM_SIGN_REQUEST',
       data: request,

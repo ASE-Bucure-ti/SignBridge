@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/backendstore.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/sdk/signbridge-client.ts","./src/tests/scenarios.ts","./shared/protocol.ts","./server/index.ts"],"version":"5.9.3"}
