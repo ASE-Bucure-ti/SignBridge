@@ -1,0 +1,33 @@
+# =============================================================================
+# SignBridge Test App — Build & Deploy to signbridge.ase.ro
+# Triggers on push to main (app/ changes only) or manual trigger
+# Self-hosted runner (tag: signbridge) runs directly on the deploy server
+# =============================================================================
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  tags:
+    - signbridge
+  environment:
+    name: production
+    url: https://signbridge.ase.ro
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - app/**/*
+        - docker-compose.yml
+        - .gitlab-ci.yml
+    - if: $CI_PIPELINE_SOURCE == "web"
+  script:
+    - mkdir -p ${DEPLOY_PATH}
+    - rsync -a --delete --exclude='node_modules' --exclude='dist' --exclude='.git'
+        app/ ${DEPLOY_PATH}/app/
+    - cp docker-compose.yml ${DEPLOY_PATH}/
+    - cd ${DEPLOY_PATH}
+    - docker compose build --no-cache signbridge-app
+    - docker compose up -d signbridge-app
+    - docker image prune -f
+    - echo "✅ Deployed at $(date -u)"
