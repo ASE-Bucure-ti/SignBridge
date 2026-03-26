@@ -22,9 +22,9 @@ deploy:
         - .gitlab-ci.yml
     - if: $CI_PIPELINE_SOURCE == "web"
   script:
-    - mkdir -p ${DEPLOY_PATH}
-    - rsync -a --delete --exclude='node_modules' --exclude='dist' --exclude='.git'
-        app/ ${DEPLOY_PATH}/app/
+    - mkdir -p ${DEPLOY_PATH}/app
+    - rm -rf ${DEPLOY_PATH}/app/*
+    - cp -r app/. ${DEPLOY_PATH}/app/
     - cp docker-compose.yml ${DEPLOY_PATH}/
     - cd ${DEPLOY_PATH}
     - docker compose build --no-cache signbridge-app
