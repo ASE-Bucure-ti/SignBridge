@@ -47,6 +47,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [sdkEvents, setSdkEvents] = useState<SignBridgeEvent[]>([]);
+  const [mobilePanel, setMobilePanel] = useState<'scenarios' | 'details' | 'events'>('scenarios');
 
   const clientRef = useRef(new SignBridgeClient({ timeout: 10_000 }));
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -105,6 +106,7 @@ export default function App() {
     setSelectedScenario(scenario);
     const req = scenario.build();
     setPreviewRequest(req);
+    setMobilePanel('details');
   }, []);
 
   // ── Send request ───────────────────────────────────────────────────────────
@@ -135,12 +137,12 @@ export default function App() {
         prev.map((r) =>
           r.id === run.id
             ? {
-                ...r,
-                response,
-                status: response.status === 'accepted' ? 'accepted' : 'error',
-                completedAt: now,
-                durationMs: now - run.sentAt,
-              }
+              ...r,
+              response,
+              status: response.status === 'accepted' ? 'accepted' : 'error',
+              completedAt: now,
+              durationMs: now - run.sentAt,
+            }
             : r,
         ),
       );
@@ -157,12 +159,12 @@ export default function App() {
         prev.map((r) =>
           r.id === run.id
             ? {
-                ...r,
-                error: message,
-                status: isTimeout ? 'timeout' : isValidation ? 'validation-error' : 'error',
-                completedAt: now,
-                durationMs: now - run.sentAt,
-              }
+              ...r,
+              error: message,
+              status: isTimeout ? 'timeout' : isValidation ? 'validation-error' : 'error',
+              completedAt: now,
+              durationMs: now - run.sentAt,
+            }
             : r,
         ),
       );
@@ -204,12 +206,12 @@ export default function App() {
           prev.map((r) =>
             r.id === run.id
               ? {
-                  ...r,
-                  response,
-                  status: response.status === 'accepted' ? 'accepted' : 'error',
-                  completedAt: now,
-                  durationMs: now - run.sentAt,
-                }
+                ...r,
+                response,
+                status: response.status === 'accepted' ? 'accepted' : 'error',
+                completedAt: now,
+                durationMs: now - run.sentAt,
+              }
               : r,
           ),
         );
@@ -230,7 +232,7 @@ export default function App() {
 
   // ── Clear ──────────────────────────────────────────────────────────────────
   const handleClearEvents = useCallback(() => {
-    fetch('/api/events', { method: 'DELETE' }).catch(() => {});
+    fetch('/api/events', { method: 'DELETE' }).catch(() => { });
     setEvents([]);
     lastEventIdRef.current = 0;
   }, []);
@@ -286,207 +288,230 @@ export default function App() {
       {page === 'store' ? (
         <BackendStore />
       ) : (
-      <main className="app-main">
-        {/* Left Panel: Scenario List */}
-        <div className="panel">
-          <div className="panel-header">
-            Test Scenarios
-            <span className="count-badge">{ALL_SCENARIOS.length}</span>
+        <>
+          {/* Mobile panel tabs — visible only on small screens via CSS */}
+          <div className="mobile-panel-tabs">
+            <button
+              className={`mobile-panel-tab ${mobilePanel === 'scenarios' ? 'active' : ''}`}
+              onClick={() => setMobilePanel('scenarios')}
+            >
+              📋 Scenarios
+            </button>
+            <button
+              className={`mobile-panel-tab ${mobilePanel === 'details' ? 'active' : ''}`}
+              onClick={() => setMobilePanel('details')}
+            >
+              📝 Details
+            </button>
+            <button
+              className={`mobile-panel-tab ${mobilePanel === 'events' ? 'active' : ''}`}
+              onClick={() => setMobilePanel('events')}
+            >
+              📡 Events
+            </button>
           </div>
-          <div className="panel-body">
-            {(
-              [
-                ['standard', 'Standard Examples'],
-                ['validation', 'Validation Tests'],
-                ['edge-case', 'Edge Cases'],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key} className="scenario-category">
-                <div className="category-label">{label}</div>
-                {SCENARIOS_BY_CATEGORY[key].map((scenario) => (
-                  <div
-                    key={scenario.id}
-                    className={`scenario-item ${selectedScenario?.id === scenario.id ? 'selected' : ''}`}
-                    onClick={() => handleSelect(scenario)}
-                  >
-                    <div className="name">
-                      <span className={`badge badge-${scenario.category}`}>
-                        {scenario.section ? `§${scenario.section}` : scenario.category}
-                      </span>
-                      {scenario.name}
-                    </div>
-                    <div className="desc">{scenario.description}</div>
-                  </div>
-                ))}
+          <main className="app-main">
+            {/* Left Panel: Scenario List */}
+            <div className={`panel ${mobilePanel !== 'scenarios' ? 'mobile-hidden' : ''}`}>
+              <div className="panel-header">
+                Test Scenarios
+                <span className="count-badge">{ALL_SCENARIOS.length}</span>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Center Panel: Request details + Response */}
-        <div className="panel">
-          {selectedScenario && previewRequest ? (
-            <>
-              <div className="action-bar">
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSend}
-                  disabled={!backendUp}
-                >
-                  🔏 Send Request
-                </button>
-                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                  {selectedScenario.name}
-                </span>
-              </div>
-
-              <div className="expected-outcome" style={{ margin: '12px 12px 0' }}>
-                <strong>Expected: </strong>{selectedScenario.expectedOutcome}
-              </div>
-
-              <div className="tabs" style={{ padding: '0 12px' }}>
-                <div
-                  className={`tab ${activeTab === 'response' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('response')}
-                >
-                  Response {latestRun?.scenarioId === selectedScenario.id ? `(${latestRun.status})` : ''}
-                </div>
-                <div
-                  className={`tab ${activeTab === 'request-json' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('request-json')}
-                >
-                  Request JSON
-                </div>
-              </div>
-
               <div className="panel-body">
-                {activeTab === 'request-json' && (
-                  <div className="detail-section">
-                    <div className="detail-section-header">
-                      Request Payload
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {JSON.stringify(previewRequest).length} bytes
-                      </span>
+                {(
+                  [
+                    ['standard', 'Standard Examples'],
+                    ['validation', 'Validation Tests'],
+                    ['edge-case', 'Edge Cases'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="scenario-category">
+                    <div className="category-label">{label}</div>
+                    {SCENARIOS_BY_CATEGORY[key].map((scenario) => (
+                      <div
+                        key={scenario.id}
+                        className={`scenario-item ${selectedScenario?.id === scenario.id ? 'selected' : ''}`}
+                        onClick={() => handleSelect(scenario)}
+                      >
+                        <div className="name">
+                          <span className={`badge badge-${scenario.category}`}>
+                            {scenario.section ? `§${scenario.section}` : scenario.category}
+                          </span>
+                          {scenario.name}
+                        </div>
+                        <div className="desc">{scenario.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Center Panel: Request details + Response */}
+            <div className={`panel ${mobilePanel !== 'details' ? 'mobile-hidden' : ''}`}>
+              {selectedScenario && previewRequest ? (
+                <>
+                  <div className="action-bar">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleSend}
+                      disabled={!backendUp}
+                    >
+                      🔏 Send Request
+                    </button>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                      {selectedScenario.name}
+                    </span>
+                  </div>
+
+                  <div className="expected-outcome" style={{ margin: '12px 12px 0' }}>
+                    <strong>Expected: </strong>{selectedScenario.expectedOutcome}
+                  </div>
+
+                  <div className="tabs" style={{ padding: '0 12px' }}>
+                    <div
+                      className={`tab ${activeTab === 'response' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('response')}
+                    >
+                      Response {latestRun?.scenarioId === selectedScenario.id ? `(${latestRun.status})` : ''}
                     </div>
-                    <div className="json-viewer">
-                      {JSON.stringify(previewRequest, null, 2)}
+                    <div
+                      className={`tab ${activeTab === 'request-json' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('request-json')}
+                    >
+                      Request JSON
                     </div>
                   </div>
-                )}
 
-                {activeTab === 'response' && (
-                  <div className="request-details">
-                    {/* Run History */}
-                    {runs
-                      .filter((r) => r.scenarioId === selectedScenario.id)
-                      .map((run) => (
-                        <div key={run.id} className="response-block">
-                          <div className="response-header">
-                            <span className={`status-dot ${run.status === 'pending' ? 'pending' : run.status === 'accepted' ? 'ok' : 'error'}`} />
-                            <span>{run.status.toUpperCase()}</span>
-                            {run.durationMs !== null && (
-                              <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
-                                {run.durationMs}ms
-                              </span>
-                            )}
-                          </div>
-                          <div className="json-viewer" style={{ maxHeight: '300px' }}>
-                            {run.response
-                              ? JSON.stringify(run.response, null, 2)
-                              : run.error
-                                ? `Error: ${run.error}`
-                                : 'Waiting for response...'}
-                          </div>
+                  <div className="panel-body">
+                    {activeTab === 'request-json' && (
+                      <div className="detail-section">
+                        <div className="detail-section-header">
+                          Request Payload
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {JSON.stringify(previewRequest).length} bytes
+                          </span>
                         </div>
-                      ))}
-                    {runs.filter((r) => r.scenarioId === selectedScenario.id).length === 0 && (
-                      <div className="empty-state">
-                        <div className="icon">📤</div>
-                        <div>Click "Send Request" to run this scenario</div>
+                        <div className="json-viewer">
+                          {JSON.stringify(previewRequest, null, 2)}
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === 'response' && (
+                      <div className="request-details">
+                        {/* Run History */}
+                        {runs
+                          .filter((r) => r.scenarioId === selectedScenario.id)
+                          .map((run) => (
+                            <div key={run.id} className="response-block">
+                              <div className="response-header">
+                                <span className={`status-dot ${run.status === 'pending' ? 'pending' : run.status === 'accepted' ? 'ok' : 'error'}`} />
+                                <span>{run.status.toUpperCase()}</span>
+                                {run.durationMs !== null && (
+                                  <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                                    {run.durationMs}ms
+                                  </span>
+                                )}
+                              </div>
+                              <div className="json-viewer" style={{ maxHeight: '300px' }}>
+                                {run.response
+                                  ? JSON.stringify(run.response, null, 2)
+                                  : run.error
+                                    ? `Error: ${run.error}`
+                                    : 'Waiting for response...'}
+                              </div>
+                            </div>
+                          ))}
+                        {runs.filter((r) => r.scenarioId === selectedScenario.id).length === 0 && (
+                          <div className="empty-state">
+                            <div className="icon">📤</div>
+                            <div>Click "Send Request" to run this scenario</div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="empty-state">
-              <div className="icon">🔏</div>
-              <div>Select a test scenario from the left panel</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                {ALL_SCENARIOS.length} scenarios covering Standard v1.0.3
-              </div>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <div className="icon">🔏</div>
+                  <div>Select a test scenario from the left panel</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    {ALL_SCENARIOS.length} scenarios covering Standard v1.0.3
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Right Panel: Server Events + SDK Events */}
-        <div className="panel">
-          <div className="panel-header">
-            Event Log
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <span className="count-badge">{events.length}</span>
-              <button className="btn btn-sm btn-ghost" onClick={handleClearEvents}>
-                Clear
-              </button>
-            </div>
-          </div>
-          <div className="panel-body">
-            {events.length === 0 && sdkEvents.length === 0 ? (
-              <div className="empty-state">
-                <div className="icon">📋</div>
-                <div>No events yet</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  Events will appear here as the native host hits callback endpoints
+            {/* Right Panel: Server Events + SDK Events */}
+            <div className={`panel ${mobilePanel !== 'events' ? 'mobile-hidden' : ''}`}>
+              <div className="panel-header">
+                Event Log
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <span className="count-badge">{events.length}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={handleClearEvents}>
+                    Clear
+                  </button>
                 </div>
               </div>
-            ) : (
-              <>
-                {/* SDK events */}
-                {sdkEvents.map((evt, i) => (
-                  <div key={`sdk-${i}`} className="event-entry">
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span className="event-type" style={{ color: 'var(--accent)' }}>
-                        SDK: {evt.type}
-                      </span>
-                      <span className="event-time">
-                        {new Date(evt.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="event-details">
-                      {evt.requestId ? evt.requestId.slice(0, 8) + '...' : '(no requestId)'}
-                      {evt.error && <span style={{ color: 'var(--error)' }}> {evt.error.slice(0, 60)}</span>}
+              <div className="panel-body">
+                {events.length === 0 && sdkEvents.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="icon">📋</div>
+                    <div>No events yet</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      Events will appear here as the native host hits callback endpoints
                     </div>
                   </div>
-                ))}
-                {/* Server events */}
-                {[...events].reverse().map((evt) => (
-                  <div key={evt.id} className="event-entry">
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span className={`event-type ${evt.category}`}>
-                        {evt.category}
-                      </span>
-                      <span className="event-time">
-                        {new Date(evt.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="event-details">
-                      {evt.objectId && <span>obj: {evt.objectId} </span>}
-                      {evt.requestId && <span>req: {evt.requestId.slice(0, 8)}... </span>}
-                    </div>
-                    {evt.details && Object.keys(evt.details).length > 0 && (
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        {JSON.stringify(evt.details).slice(0, 120)}
-                        {JSON.stringify(evt.details).length > 120 && '...'}
+                ) : (
+                  <>
+                    {/* SDK events */}
+                    {sdkEvents.map((evt, i) => (
+                      <div key={`sdk-${i}`} className="event-entry">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span className="event-type" style={{ color: 'var(--accent)' }}>
+                            SDK: {evt.type}
+                          </span>
+                          <span className="event-time">
+                            {new Date(evt.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="event-details">
+                          {evt.requestId ? evt.requestId.slice(0, 8) + '...' : '(no requestId)'}
+                          {evt.error && <span style={{ color: 'var(--error)' }}> {evt.error.slice(0, 60)}</span>}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      </main>
+                    ))}
+                    {/* Server events */}
+                    {[...events].reverse().map((evt) => (
+                      <div key={evt.id} className="event-entry">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span className={`event-type ${evt.category}`}>
+                            {evt.category}
+                          </span>
+                          <span className="event-time">
+                            {new Date(evt.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="event-details">
+                          {evt.objectId && <span>obj: {evt.objectId} </span>}
+                          {evt.requestId && <span>req: {evt.requestId.slice(0, 8)}... </span>}
+                        </div>
+                        {evt.details && Object.keys(evt.details).length > 0 && (
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            {JSON.stringify(evt.details).slice(0, 120)}
+                            {JSON.stringify(evt.details).length > 120 && '...'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+          </main>
+        </>
       )}
 
       {/* Toasts */}

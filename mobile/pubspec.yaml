@@ -1,0 +1,59 @@
+name: signbridge_mobile
+description: "SignBridge Mobile Host — NFC-based document signing via Romanian CEI"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # NFC
+  flutter_nfc_kit: ^3.5.0
+
+  # Cryptography
+  pointycastle: ^3.9.0
+  asn1lib: ^1.5.0
+  crypto: ^3.0.0
+
+  # HTTP
+  dio: ^5.4.0
+
+  # Secure storage
+  flutter_secure_storage: ^9.2.0
+
+  # UI
+  pin_code_fields: ^8.0.0
+
+  # Deep linking
+  app_links: ^6.3.0
+
+  # Utils
+  intl: ^0.19.0
+  logger: ^2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/app_icon.png"
+  remove_alpha_ios: true
+
+# The following section is specific to Flutter packages.
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
