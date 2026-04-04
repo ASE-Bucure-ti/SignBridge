@@ -2,7 +2,12 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SignRequest, SignResponse } from '../shared/protocol';
 import { SignBridgeClient } from './sdk/signbridge-client';
 import type { SignBridgeEvent } from './sdk/signbridge-client';
-import { ALL_SCENARIOS, SCENARIOS_BY_CATEGORY, type TestScenario } from './tests/scenarios';
+import {
+  ALL_SCENARIOS,
+  DEFAULT_CERT_ID,
+  SCENARIOS_BY_CATEGORY,
+  type TestScenario,
+} from './tests/scenarios';
 import BackendStore from './BackendStore';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -39,6 +44,7 @@ interface Toast {
 
 export default function App() {
   const [page, setPage] = useState<'tester' | 'store'>('tester');
+  const [certId, setCertId] = useState(DEFAULT_CERT_ID);
   const [selectedScenario, setSelectedScenario] = useState<TestScenario | null>(null);
   const [previewRequest, setPreviewRequest] = useState<SignRequest | null>(null);
   const [runs, setRuns] = useState<TestRun[]>([]);
@@ -52,6 +58,8 @@ export default function App() {
   const clientRef = useRef(new SignBridgeClient({ timeout: 10_000 }));
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastEventIdRef = useRef(0);
+  const trimmedCertId = certId.trim();
+  const hasCertId = trimmedCertId.length > 0;
 
   // ── Toast helper ───────────────────────────────────────────────────────────
   const toast = useCallback((type: Toast['type'], message: string) => {
@@ -80,6 +88,21 @@ export default function App() {
     return unsub;
   }, []);
 
+  const buildScenarioRequest = useCallback((scenario: TestScenario, certIdOverride: string) => {
+    const request = scenario.build();
+    if (!request.cert) {
+      return request;
+    }
+
+    return {
+      ...request,
+      cert: {
+        ...request.cert,
+        certId: certIdOverride,
+      },
+    };
+  }, []);
+
   // ── Poll server events ────────────────────────────────────────────────────
   useEffect(() => {
     const poll = () => {
@@ -101,17 +124,23 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedScenario) {
+      return;
+    }
+
+    setPreviewRequest(buildScenarioRequest(selectedScenario, trimmedCertId));
+  }, [buildScenarioRequest, selectedScenario, trimmedCertId]);
+
   // ── Select scenario ────────────────────────────────────────────────────────
   const handleSelect = useCallback((scenario: TestScenario) => {
     setSelectedScenario(scenario);
-    const req = scenario.build();
-    setPreviewRequest(req);
     setMobilePanel('details');
   }, []);
 
   // ── Send request ───────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
-    if (!selectedScenario || !previewRequest) return;
+    if (!selectedScenario || !previewRequest || !hasCertId) return;
 
     const run: TestRun = {
       id: previewRequest.requestId,
@@ -172,16 +201,21 @@ export default function App() {
     }
 
     // Regenerate request with fresh UUID for next send
-    const fresh = selectedScenario.build();
+    const fresh = buildScenarioRequest(selectedScenario, trimmedCertId);
     setPreviewRequest(fresh);
-  }, [selectedScenario, previewRequest, toast]);
+  }, [buildScenarioRequest, hasCertId, previewRequest, selectedScenario, toast, trimmedCertId]);
 
   // ── Run All Scenarios ──────────────────────────────────────────────────────
   const handleRunAll = useCallback(async () => {
+    if (!hasCertId) {
+      toast('error', 'Enter a certificate ID before running scenarios.');
+      return;
+    }
+
     toast('info', `Running all ${ALL_SCENARIOS.length} scenarios...`);
     for (const scenario of ALL_SCENARIOS) {
       setSelectedScenario(scenario);
-      const req = scenario.build();
+      const req = buildScenarioRequest(scenario, trimmedCertId);
       setPreviewRequest(req);
 
       const run: TestRun = {
@@ -228,7 +262,7 @@ export default function App() {
       }
     }
     toast('success', 'All scenarios completed!');
-  }, [toast]);
+  }, [buildScenarioRequest, hasCertId, toast, trimmedCertId]);
 
   // ── Clear ──────────────────────────────────────────────────────────────────
   const handleClearEvents = useCallback(() => {
@@ -274,7 +308,7 @@ export default function App() {
           </div>
           {page === 'tester' && (
             <>
-              <button className="btn btn-sm btn-ghost" onClick={handleRunAll}>
+              <button className="btn btn-sm btn-ghost" onClick={handleRunAll} disabled={!backendUp || !hasCertId}>
                 ▶ Run All ({ALL_SCENARIOS.length})
               </button>
               <button className="btn btn-sm btn-ghost" onClick={handleClearRuns}>
@@ -318,6 +352,24 @@ export default function App() {
                 <span className="count-badge">{ALL_SCENARIOS.length}</span>
               </div>
               <div className="panel-body">
+                <div className="scenario-toolbar">
+                  <label className="field-label" htmlFor="cert-id-input">
+                    Certificate ID
+                  </label>
+                  <input
+                    id="cert-id-input"
+                    className="text-input"
+                    type="text"
+                    value={certId}
+                    onChange={(event) => setCertId(event.target.value)}
+                    placeholder="Enter the certificate ID used in requests"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <div className="field-hint">
+                    Applied to previewed and sent requests that already include a cert object.
+                  </div>
+                </div>
                 {(
                   [
                     ['standard', 'Standard Examples'],
@@ -355,12 +407,12 @@ export default function App() {
                     <button
                       className="btn btn-primary"
                       onClick={handleSend}
-                      disabled={!backendUp}
+                      disabled={!backendUp || !hasCertId}
                     >
                       🔏 Send Request
                     </button>
                     <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                      {selectedScenario.name}
+                      {selectedScenario.name} • certId: {trimmedCertId || 'required'}
                     </span>
                   </div>
 

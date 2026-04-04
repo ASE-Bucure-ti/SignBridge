@@ -9,6 +9,7 @@ import type { SignRequest } from '../../shared/protocol';
 
 /** Base URL the mock backend is reachable at (same origin in production, Vite proxy in dev) */
 const API = `${window.location.origin}/api`;
+export const DEFAULT_CERT_ID = 'ZEEK LIVIU-IOAN';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,10 @@ function upload(endpoint: string, signedContentType: 'string' | 'pdf' | 'xml' | 
     headers: { 'X-API-Key': 'test-api-key-12345' },
     signedContentType,
   };
+}
+
+function certSelection(label?: string) {
+  return label ? { certId: DEFAULT_CERT_ID, label } : { certId: DEFAULT_CERT_ID };
 }
 
 // =============================================================================
@@ -67,7 +72,7 @@ const exampleA: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'student-portal',
-    cert: { certId: 'ZEEK LIVIU-IOAN', label: 'University Signing Certificate' },
+    cert: certSelection('University Signing Certificate'),
     metadata: { studentId: 'STU-2026-001', documentType: 'grade-report' },
     objects: [
       {
@@ -102,7 +107,7 @@ const exampleB: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'grades-system',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {
       batchId: 'BATCH-2026-CS101-FINAL',
       courseCode: 'CS101',
@@ -140,7 +145,7 @@ const exampleC: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'graduation-system',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { ceremony: 'GRAD-2026-SPRING', department: 'Computer Science' },
     objectGroups: [
       {
@@ -192,7 +197,7 @@ const exampleD: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'batch-system',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { batchId: 'batch-123' },
     objectGroups: [
       {
@@ -224,7 +229,7 @@ const exampleE: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'report-system',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { batchId: 'REPORTS-2026-SEMESTER1', totalDocuments: 500 },
     objectGroups: [
       {
@@ -260,7 +265,7 @@ const inlineText: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'text-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { type: 'receipt' },
     objects: [
       {
@@ -284,7 +289,7 @@ const inlineXml: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'xml-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { documentType: 'invoice-xml' },
     objects: [
       {
@@ -313,7 +318,7 @@ const inlineJson: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'json-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { documentType: 'invoice-json' },
     objects: [
       {
@@ -341,7 +346,7 @@ const remotePdf: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'pdf-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { documentType: 'contract' },
     objects: [
       {
@@ -371,7 +376,7 @@ const remoteBinary: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'binary-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { documentType: 'firmware' },
     objects: [
       {
@@ -399,7 +404,7 @@ const remoteXml: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'xml-remote-signer',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { documentType: 'report-xml' },
     objects: [
       {
@@ -432,7 +437,7 @@ const missingProtocolVersion: TestScenario = {
     const req = {
       requestId: id(),
       appId: 'test',
-      cert: { certId: 'ZEEK LIVIU-IOAN' },
+      cert: certSelection(),
       metadata: {},
       objects: [
         {
@@ -460,7 +465,7 @@ const unsupportedVersion: TestScenario = {
     protocolVersion: '99.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -485,7 +490,7 @@ const missingRequestId: TestScenario = {
     const req = {
       protocolVersion: '1.0',
       appId: 'test',
-      cert: { certId: 'ZEEK LIVIU-IOAN' },
+      cert: certSelection(),
       metadata: {},
       objects: [
         {
@@ -512,7 +517,7 @@ const missingAppId: TestScenario = {
     const req = {
       protocolVersion: '1.0',
       requestId: id(),
-      cert: { certId: 'ZEEK LIVIU-IOAN' },
+      cert: certSelection(),
       metadata: {},
       objects: [
         {
@@ -567,7 +572,7 @@ const missingMetadata: TestScenario = {
       protocolVersion: '1.0',
       requestId: id(),
       appId: 'test',
-      cert: { certId: 'ZEEK LIVIU-IOAN' },
+      cert: certSelection(),
       objects: [
         {
           id: 'obj-1',
@@ -593,7 +598,7 @@ const bothObjectsAndGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -627,7 +632,7 @@ const neitherObjectsNorGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
   }),
 };
@@ -643,7 +648,7 @@ const inlinePdfForbidden: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -669,7 +674,7 @@ const inlineBinaryForbidden: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -694,7 +699,7 @@ const pdfMissingPdfOptions: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -723,7 +728,7 @@ const xmlMissingXmlOptions: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -752,7 +757,7 @@ const duplicateObjectIds: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -784,7 +789,7 @@ const missingUploadUrlPlaceholder: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -812,7 +817,7 @@ const missingDownloadUrlPlaceholder: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objectGroups: [
       {
@@ -843,7 +848,7 @@ const emptyMetadata: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -868,7 +873,7 @@ const singleObjectInGroup: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'test-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { note: 'single item in group' },
     objectGroups: [
       {
@@ -894,7 +899,7 @@ const withCorrelationId: TestScenario = {
     requestId: id(),
     correlationId: `trace-${id()}`,
     appId: 'tracing-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN', label: 'My Cert' },
+    cert: certSelection('My Cert'),
     metadata: { traceId: 'abc-123' },
     objects: [
       {
@@ -919,7 +924,7 @@ const noProgressCallback: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'no-progress-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -946,7 +951,7 @@ const failingProgressEndpoint: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'progress-fail-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objects: [
       {
@@ -976,7 +981,7 @@ const remoteTextInGroup: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'remote-text-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: {},
     objectGroups: [
       {
@@ -1004,7 +1009,7 @@ const multipleGroups: TestScenario = {
     protocolVersion: '1.0',
     requestId: id(),
     appId: 'multi-group-app',
-    cert: { certId: 'ZEEK LIVIU-IOAN' },
+    cert: certSelection(),
     metadata: { testType: 'multi-group' },
     objectGroups: [
       {
