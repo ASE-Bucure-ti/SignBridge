@@ -9,6 +9,8 @@ echo  SignBridge - Production Build (Windows)
 echo ========================================
 echo.
 
+set "SIGN_HELPER=%~dp0packagers\windows\sign-artifact.bat"
+
 REM ── Check Python ──────────────────────────────────────────────────────
 where py >nul 2>&1
 if %ERRORLEVEL% neq 0 (
@@ -56,7 +58,7 @@ if exist "dist" rmdir /s /q dist
 if exist "build" rmdir /s /q build
 
 REM ── Build ─────────────────────────────────────────────────────────────
-echo [5/5] Building with PyInstaller...
+echo [5/6] Building with PyInstaller...
 echo.
 pyinstaller --clean signbridge.spec
 if %ERRORLEVEL% neq 0 (
@@ -69,6 +71,15 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 if exist "dist\SignBridge\SignBridge.exe" (
+    echo [6/6] Signing native host executable...
+    call "%SIGN_HELPER%" "%~dp0dist\SignBridge\SignBridge.exe"
+    if %ERRORLEVEL% neq 0 (
+        echo ========================================
+        echo  SIGNING FAILED
+        echo ========================================
+        exit /b 1
+    )
+
     echo ========================================
     echo  BUILD SUCCESSFUL
     echo ========================================
@@ -90,4 +101,4 @@ if exist "dist\SignBridge\SignBridge.exe" (
 )
 
 call venv\Scripts\deactivate.bat 2>nul
-pause
+if "%CI%"=="" pause

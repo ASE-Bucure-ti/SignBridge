@@ -15,6 +15,9 @@ echo  SignBridge - Installer Build (Windows)
 echo ========================================
 echo.
 
+set "SIGN_HELPER=%~dp0sign-artifact.bat"
+set "INSTALLER_PATH="
+
 REM ── Locate Inno Setup compiler ────────────────────────────────────────
 set "ISCC="
 
@@ -40,10 +43,10 @@ if not exist "%~dp0..\..\dist\SignBridge\SignBridge.exe" (
     exit /b 1
 )
 
-echo [1/2] PyInstaller build found.
+echo [1/3] PyInstaller build found.
 
 REM ── Compile the installer ─────────────────────────────────────────────
-echo [2/2] Compiling installer...
+echo [2/3] Compiling installer...
 echo.
 
 "%ISCC%" "%~dp0signbridge-setup.iss"
@@ -58,12 +61,29 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+for /f "delims=" %%F in ('dir /b /o:-d "%~dp0..\..\installers\windows\SignBridge-Setup-*.exe"') do if not defined INSTALLER_PATH set "INSTALLER_PATH=%~dp0..\..\installers\windows\%%F"
+
+if "%INSTALLER_PATH%"=="" (
+    echo ERROR: Could not locate built installer in installers\windows.
+    exit /b 1
+)
+
+echo [3/3] Signing installer...
+call "%SIGN_HELPER%" "%INSTALLER_PATH%"
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo ========================================
+    echo  INSTALLER SIGNING FAILED
+    echo ========================================
+    exit /b 1
+)
+
 echo.
 echo ========================================
 echo  INSTALLER BUILD SUCCESSFUL
 echo ========================================
 echo.
-echo Output: host\installers\windows\SignBridge-Setup-*.exe
+echo Output: %INSTALLER_PATH%
 echo.
 
-pause
+if "%CI%"=="" pause
