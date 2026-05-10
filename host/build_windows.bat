@@ -10,22 +10,34 @@ echo ========================================
 echo.
 
 set "SIGN_HELPER=%~dp0packagers\windows\sign-artifact.bat"
+set "PYTHON_CMD="
 
 REM ── Check Python ──────────────────────────────────────────────────────
 where py >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Python launcher ^(py^) is not installed or not in PATH
-    echo Download from https://python.org
+if not errorlevel 1 (
+    set "PYTHON_CMD=py -3.11"
+) else if exist "%USERPROFILE%\.pyenv\pyenv-win\versions\3.12.2\python.exe" (
+    set "PYTHON_CMD=%USERPROFILE%\.pyenv\pyenv-win\versions\3.12.2\python.exe"
+) else (
+    where python.exe >nul 2>&1
+    if not errorlevel 1 (
+        set "PYTHON_CMD=python.exe"
+    )
+)
+
+if "%PYTHON_CMD%"=="" (
+    echo ERROR: Python is not installed or not in PATH
+    echo Install Python from https://python.org or ensure python.exe is available in PATH
     exit /b 1
 )
 
 echo [1/5] Checking Python version...
-py -3.11 --version
+%PYTHON_CMD% --version
 
 REM ── Virtual environment ───────────────────────────────────────────────
 if not exist "venv" (
     echo [2/5] Creating virtual environment...
-    py -3.11 -m venv venv
+    %PYTHON_CMD% -m venv venv
     if %ERRORLEVEL% neq 0 (
         echo ERROR: Failed to create virtual environment
         exit /b 1
