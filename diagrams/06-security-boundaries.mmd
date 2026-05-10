@@ -1,0 +1,62 @@
+flowchart LR
+  subgraph caller[Caller-controlled domain]
+    web[Web application]
+    api[Backend endpoints]
+    content_store[(Raw content store)]
+    result_store[(Signed result store)]
+  end
+
+  subgraph browser[Browser extension trust boundary]
+    allowlist{Origin allowlist}
+    validator{Schema and semantic validator}
+    bg[Native messaging bridge]
+  end
+
+  subgraph desktop[User desktop trust boundary]
+    gui[Native host GUI]
+    parser{Native request parser}
+    engine[Processing engine]
+    pkcs[PKCS#11 manager]
+  end
+
+  subgraph hardware[Hardware trust boundary]
+    hsm[(HSM token private key)]
+  end
+
+  web -->|postMessage request| allowlist
+  allowlist -- reject --> web
+  allowlist -- allowed --> validator
+  validator -- reject malformed request --> web
+  validator -- valid request only --> bg
+  bg -->|native messaging frame| gui
+  gui --> parser
+  parser --> engine
+  engine -->|HTTPS GET raw bytes| content_store
+  content_store --> api
+  engine -->|PKCS#11 session with user PIN| pkcs
+  pkcs -->|sign digest/content| hsm
+  hsm -->|signature only, private key never leaves token| pkcs
+  engine -->|HTTPS POST signed bytes| result_store
+  engine -->|HTTPS JSON callbacks| api
+
+  m1[Mitigation: no inline PDF or binary]
+  m2[Mitigation: HTTPS URLs, localhost only for development]
+  m3[Mitigation: objectId placeholders prevent hardcoded batch endpoints]
+  m4[Mitigation: callbacks are authenticated with caller headers]
+
+  validator -.-> m1
+  validator -.-> m2
+  validator -.-> m3
+  engine -.-> m4
+
+  classDef callerClass fill:#f8fafc,stroke:#64748b,color:#0f172a;
+  classDef browserClass fill:#eff6ff,stroke:#2563eb,color:#1e3a8a;
+  classDef desktopClass fill:#ecfdf5,stroke:#16a34a,color:#14532d;
+  classDef hardwareClass fill:#fff7ed,stroke:#ea580c,color:#7c2d12;
+  classDef mitigation fill:#fefce8,stroke:#ca8a04,color:#713f12;
+
+  class web,api,content_store,result_store callerClass;
+  class allowlist,validator,bg browserClass;
+  class gui,parser,engine,pkcs desktopClass;
+  class hsm hardwareClass;
+  class m1,m2,m3,m4 mitigation;

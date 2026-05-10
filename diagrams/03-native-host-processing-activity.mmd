@@ -1,0 +1,48 @@
+flowchart TD
+  start([Native message received]) --> parse[Parse SignRequest]
+  parse --> parse_ok{Request valid?}
+  parse_ok -- no --> req_error[Build request-level error]
+  req_error --> req_callbacks[Best-effort onError callbacks when possible]
+  req_callbacks --> finish([Finish])
+
+  parse_ok -- yes --> wait_user[Display request in GUI]
+  wait_user --> approve{User approves with PIN?}
+  approve -- no / window closed --> cancelled[Send CANCELLED_BY_USER callbacks]
+  cancelled --> finish
+
+  approve -- yes --> session[Open PKCS#11 session]
+  session --> cert{Certificate found by certId?}
+  cert -- no --> cert_error[Send CERT_NOT_FOUND callbacks]
+  cert_error --> finish
+  cert -- yes --> key{Private key found?}
+  key -- no --> key_error[Send CERT_NOT_FOUND callbacks]
+  key_error --> finish
+
+  key -- yes --> resolve[Resolve objects and objectGroups into ResolvedObject list]
+  resolve --> next_obj{Next object available?}
+  next_obj -- no --> aggregate[Build final internal response for GUI log]
+  aggregate --> finish
+
+  next_obj -- yes --> acquire[Acquire content]
+  acquire --> content_source{Inline content?}
+  content_source -- yes --> encode[UTF-8 encode content]
+  content_source -- no --> download[Download raw bytes from downloadUrl]
+  download --> download_ok{Download ok?}
+  download_ok -- no --> download_error[Record DOWNLOAD_FAILED and send onError]
+  download_error --> next_obj
+  download_ok -- yes --> progress1[Send optional progress: signing]
+  encode --> progress1
+
+  progress1 --> sign[Sign by dataType: text/json/pdf/xml/binary]
+  sign --> sign_ok{Signing ok?}
+  sign_ok -- no --> sign_error[Record SIGN_FAILED and send onError]
+  sign_error --> next_obj
+  sign_ok -- yes --> progress2[Send optional progress: uploading]
+
+  progress2 --> upload[Upload raw signed bytes]
+  upload --> upload_ok{Upload ok?}
+  upload_ok -- no --> upload_error[Record UPLOAD_FAILED and send onError]
+  upload_error --> next_obj
+  upload_ok -- yes --> success[Send onSuccess callback]
+  success --> record[Record object result]
+  record --> next_obj

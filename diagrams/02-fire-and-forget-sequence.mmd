@@ -1,0 +1,35 @@
+sequenceDiagram
+  autonumber
+  actor User
+  participant WebApp as Web application
+  participant CS as Content script
+  participant BG as Background service worker
+  participant Host as Native host GUI
+  participant Engine as Processing engine
+  participant HSM as HSM token
+  participant API as Caller backend API
+
+  WebApp->>CS: window.postMessage(HSM_SIGN_REQUEST)
+  CS->>CS: Check origin allowlist
+  CS->>CS: Validate schema and semantic rules
+  CS->>BG: runtime.sendMessage(SIGNBRIDGE_SIGN_REQUEST)
+  BG->>Host: connectNative(com.ase.signer)
+  BG->>Host: postMessage(SignRequest)
+  BG-->>CS: SignResponse(status=accepted)
+  CS-->>WebApp: window.postMessage(HSM_SIGN_RESPONSE)
+
+  Note over WebApp,API: The web app receives only an acknowledgment. Final results arrive through backend callbacks.
+
+  Host->>User: Show request, token selector, PIN field
+  User->>Host: Select token and approve signing
+  Host->>Engine: process_request(request, session, key, cert)
+  Engine->>Engine: resolve objects / groups
+  Engine->>API: GET downloadUrl or use inline content
+  API-->>Engine: Raw bytes
+  Engine->>API: POST progress callback (optional)
+  Engine->>HSM: PKCS#11 sign operation
+  HSM-->>Engine: Signature or signed document
+  Engine->>API: POST uploadUrl with raw signed bytes
+  API-->>Engine: Upload HTTP result
+  Engine->>API: POST onSuccess callback
+  Host->>Host: Log completion and close window

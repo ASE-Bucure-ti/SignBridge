@@ -1,0 +1,34 @@
+stateDiagram-v2
+  [*] --> Posted: Web app posts HSM_SIGN_REQUEST
+  Posted --> OriginRejected: origin not in allowlist
+  Posted --> SchemaRejected: schema or semantic validation fails
+  OriginRejected --> AckError: BAD_REQUEST
+  SchemaRejected --> AckError: BAD_REQUEST or UNSUPPORTED_VERSION
+  AckError --> [*]
+
+  Posted --> Accepted: valid request forwarded to native host
+  Accepted --> AckAccepted: extension returns immediate ACK
+  AckAccepted --> WaitingForUser: native host GUI displays request
+
+  WaitingForUser --> Cancelled: user closes window or cancels
+  Cancelled --> ErrorCallbacks: CANCELLED_BY_USER
+  ErrorCallbacks --> [*]
+
+  WaitingForUser --> HsmSession: user enters PIN and signs
+  HsmSession --> CertLookupFailed: certificate or private key missing
+  CertLookupFailed --> ErrorCallbacks: CERT_NOT_FOUND
+
+  HsmSession --> ObjectProcessing: certificate and key found
+  ObjectProcessing --> DownloadFailed: downloadUrl fails
+  DownloadFailed --> ObjectErrorCallback: DOWNLOAD_FAILED
+  ObjectProcessing --> SignFailed: PKCS#11 or format signing fails
+  SignFailed --> ObjectErrorCallback: SIGN_FAILED
+  ObjectProcessing --> UploadFailed: uploadUrl fails
+  UploadFailed --> ObjectErrorCallback: UPLOAD_FAILED
+  ObjectProcessing --> ObjectCompleted: upload succeeds
+  ObjectCompleted --> SuccessCallback: onSuccess posted
+  ObjectErrorCallback --> MoreObjects
+  SuccessCallback --> MoreObjects
+  MoreObjects --> ObjectProcessing: remaining object
+  MoreObjects --> Completed: no remaining objects
+  Completed --> [*]

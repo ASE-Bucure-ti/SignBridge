@@ -1,0 +1,95 @@
+classDiagram
+  class SignRequest {
+    string protocolVersion
+    string requestId
+    string correlationId optional
+    string appId
+    Map metadata
+  }
+
+  class CertSelector {
+    string certId
+    string label optional
+  }
+
+  class SignObject {
+    string id
+    DataType dataType
+  }
+
+  class ObjectGroup {
+    DataType dataType
+    Mode mode
+    string downloadUrl optional
+    Map downloadHeaders optional
+  }
+
+  class GroupedObject {
+    string id
+    string content.value optional
+    string content.encoding optional
+  }
+
+  class ContentInline {
+    mode inline
+    encoding utf8
+    string content
+  }
+
+  class ContentRemote {
+    mode remote
+    string downloadUrl
+    string httpMethod optional
+    Map headers optional
+  }
+
+  class UploadConfig {
+    string uploadUrl
+    string httpMethod optional
+    SignedContentType signedContentType
+    Map headers optional
+  }
+
+  class CallbacksConfig {
+    string onSuccess
+    string onError
+    string progress optional
+    Map headers optional
+  }
+
+  class PdfOptions {
+    string label
+  }
+
+  class XmlOptions {
+    string xpath
+    string idAttribute optional
+  }
+
+  class AckResponse {
+    string protocolVersion
+    string requestId
+    accepted_or_error status
+    ErrorObject[] errors optional
+    Map metadata
+  }
+
+  SignRequest "1" o-- "1" CertSelector : cert
+  SignRequest "0..*" o-- SignObject : objects
+  SignRequest "0..*" o-- ObjectGroup : objectGroups
+  SignObject "1" o-- "1" UploadConfig : upload
+  SignObject "1" o-- "1" CallbacksConfig : callbacks
+  SignObject "0..1" o-- PdfOptions : pdfOptions
+  SignObject "0..1" o-- XmlOptions : xmlOptions
+  SignObject "1" --> "1" ContentInline : inline content
+  SignObject "1" --> "1" ContentRemote : remote content
+  ObjectGroup "1" o-- "1..*" GroupedObject : objects
+  ObjectGroup "1" o-- "1" UploadConfig : shared upload
+  ObjectGroup "1" o-- "1" CallbacksConfig : shared callbacks
+  ObjectGroup "0..1" o-- PdfOptions : shared pdfOptions
+  ObjectGroup "0..1" o-- XmlOptions : shared xmlOptions
+
+  note for SignRequest "objects and objectGroups are mutually exclusive"
+  note for ObjectGroup "remote groups require downloadUrl with <objectId>"
+  note for UploadConfig "uploadUrl always requires <objectId>"
+  note for AckResponse "per-object results are delivered by callbacks, not by ACK"

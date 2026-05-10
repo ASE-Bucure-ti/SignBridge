@@ -1,0 +1,49 @@
+flowchart LR
+  user[User / token holder]
+  web[Web application]
+  backend[Caller backend]
+
+  subgraph browser[Browser environment]
+    page[Web page JavaScript]
+    content[Extension content script]
+    storage[(Allowed origins storage)]
+    background[Extension background service worker]
+    options[Extension options page]
+  end
+
+  subgraph desktop[Desktop native environment]
+    host[SignBridge native host GUI]
+    engine[Processing engine]
+    resolver[Object resolver]
+    crypto[PKCS#11 signing adapter]
+    token[(HSM / smart card token)]
+  end
+
+  user -->|enters PIN and approves| host
+  options -->|maintains allowlist| storage
+  storage -->|origin check| content
+  web -->|builds SignRequest| page
+  page -->|window.postMessage HSM_SIGN_REQUEST| content
+  content -->|schema and semantic validation| background
+  background -->|Chrome native messaging| host
+  background -->|immediate ACK accepted / error| content
+  content -->|window.postMessage HSM_SIGN_RESPONSE| page
+  host -->|parse request| engine
+  engine --> resolver
+  resolver -->|flat ResolvedObject list| engine
+  engine -->|download raw content| backend
+  engine -->|request hardware signature| crypto
+  crypto -->|private key operation| token
+  token -->|signature / signed document| crypto
+  engine -->|upload signed bytes| backend
+  engine -->|progress, success, error callbacks| backend
+
+  classDef external fill:#f8fafc,stroke:#64748b,color:#0f172a;
+  classDef browser fill:#eff6ff,stroke:#2563eb,color:#1e3a8a;
+  classDef native fill:#ecfdf5,stroke:#16a34a,color:#14532d;
+  classDef security fill:#fff7ed,stroke:#ea580c,color:#7c2d12;
+
+  class user,web,backend external;
+  class page,content,storage,background,options browser;
+  class host,engine,resolver native;
+  class crypto,token security;
