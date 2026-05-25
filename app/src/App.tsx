@@ -285,7 +285,7 @@ export default function App() {
       <header className="app-header">
         <h1>
           🔏 SignBridge Test Client
-          <span className="version">v1.0 — Protocol v1.0</span>
+          <span className="version">Protocol v1.0.3</span>
         </h1>
         <div className="status-bar">
           <nav className="page-nav">
