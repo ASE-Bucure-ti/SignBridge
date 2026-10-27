@@ -173,13 +173,22 @@ Uint8List buildCms({
   required CmsSignatureAlgorithm signatureAlgorithm,
   Uint8List? tsaToken,
 }) {
+  final signatureValue = switch (signatureAlgorithm) {
+    CmsSignatureAlgorithm.ecdsaSha256 ||
+    CmsSignatureAlgorithm.ecdsaSha384 =>
+      _ecdsaSignatureDer(signature),
+    CmsSignatureAlgorithm.rsaSha256 ||
+    CmsSignatureAlgorithm.rsaSha384 =>
+      signature,
+  };
+
   // ── SignerInfo ──
   final signerInfo = _buildSignerInfo(
     cert: cert,
     digestAlgorithm: digestAlgorithm,
     signatureAlgorithm: signatureAlgorithm,
     signedAttributesDer: signedAttributesDer,
-    signature: signature,
+    signature: signatureValue,
     tsaToken: tsaToken,
   );
 
@@ -192,6 +201,48 @@ Uint8List buildCms({
 
   // ── ContentInfo ──
   return _buildContentInfo(signedData);
+}
+
+/// CMS ECDSA signatures are a DER SEQUENCE of two INTEGERs (RFC 5753).
+/// The card returns raw r||s, 48 + 48 bytes for P-384.
+Uint8List _ecdsaSignatureDer(Uint8List signature) {
+  if (_isDerEcdsaSignature(signature)) return signature;
+  if (signature.isEmpty || signature.length.isOdd) {
+    throw ArgumentError(
+      'Unexpected ECDSA signature length ${signature.length}',
+    );
+  }
+  final half = signature.length ~/ 2;
+  final body = BytesBuilder();
+  body.add(_derInteger(signature.sublist(0, half)));
+  body.add(_derInteger(signature.sublist(half)));
+  final seq = BytesBuilder();
+  _writeSequence(seq, body.toBytes());
+  return seq.toBytes();
+}
+
+bool _isDerEcdsaSignature(Uint8List signature) {
+  if (signature.length < 8 || signature[0] != 0x30) return false;
+  final seq = ASN1Parser(signature);
+  if (!seq.hasNext()) return false;
+  final outer = seq.nextObject();
+  if (outer is! ASN1Sequence || outer.elements.length != 2) return false;
+  if (outer.encodedBytes.length != signature.length) return false;
+  return outer.elements[0] is ASN1Integer && outer.elements[1] is ASN1Integer;
+}
+
+Uint8List _derInteger(Uint8List value) {
+  var start = 0;
+  while (start < value.length - 1 && value[start] == 0) {
+    start++;
+  }
+  final stripped = value.sublist(start);
+  final body = BytesBuilder();
+  if ((stripped[0] & 0x80) != 0) body.addByte(0x00);
+  body.add(stripped);
+  final out = BytesBuilder();
+  _writeTag(out, 0x02, body.toBytes());
+  return out.toBytes();
 }
 
 /// Hash the signed attributes for the card to sign.

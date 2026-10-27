@@ -1,4 +1,4 @@
-// SignBridge Protocol v1.0.3 — Data models
+// SignBridge Protocol v1.0 — Data models
 // Mirrors app/shared/protocol.ts
 
 import 'errors.dart';

@@ -30,15 +30,22 @@ class Uploader {
         SignedContentType.string => 'text/plain',
       };
 
+      // Send the byte list directly so Dio sets Content-Length.
+      // A Stream body becomes chunked transfer and many servers
+      // (including our E2E harness) then read zero bytes.
       final options = Options(
         method: method,
-        headers: {'Content-Type': contentType, ...?config.headers},
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': data.length.toString(),
+          ...?config.headers,
+        },
         responseType: ResponseType.plain,
       );
 
       final response = await _dio.request<String>(
         config.uploadUrl,
-        data: Stream.fromIterable([data]),
+        data: data,
         options: options,
       );
 

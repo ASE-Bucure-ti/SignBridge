@@ -67,6 +67,8 @@ class IncrementalUpdate {
 /// [signingTime]   — DateTime for /M and appearance.
 /// [reason]        — /Reason value.
 /// [location]      — /Location value.
+/// [logo]          — optional RGB(+alpha) logo for the visible appearance.
+/// [appearanceTimeLabel] — human-readable timestamp for the appearance text.
 IncrementalUpdate buildIncremental({
   required PdfInfo pdf,
   required SigFieldInfo sigField,
@@ -74,6 +76,8 @@ IncrementalUpdate buildIncremental({
   required DateTime signingTime,
   String reason = 'Signed by SignBridge',
   String location = 'SignBridge Mobile',
+  AppearanceLogo? logo,
+  String? appearanceTimeLabel,
 }) {
   final originalBytes = pdf.bytes;
   final pdfStr = latin1.decode(originalBytes);
@@ -96,38 +100,74 @@ IncrementalUpdate buildIncremental({
     signingTime: timeStr,
     reason: reason,
     location: location,
+    name: signerName,
   );
 
   newObjects.add(_NewObject(sigDictObjNum, sigDictBody));
 
-  // ── 2. Appearance XObject (for visible signature) ──
-  int? apObjNum;
-  String? apXObjectBody;
-  final appearance = buildAppearance(
+  // Layout from CN length; grow the widget /Rect from the field's anchor.
+  final timeLabel = appearanceTimeLabel ?? timeStr;
+  final layout = computeAppearanceLayout(
     signerName: signerName,
-    signingTime: timeStr,
-    rect: sigField.rect,
+    signingTimeLabel: timeLabel,
+    logo: logo,
   );
-  apObjNum = nextObjNum++;
-  apXObjectBody = buildAppearanceXObject(appearance);
-  newObjects.add(_NewObject(apObjNum, apXObjectBody));
+  final fittedRect = fitAppearanceRect(sigField.rect, layout);
+  final fittedField = SigFieldInfo(
+    existingWidgetObjNum: sigField.existingWidgetObjNum,
+    rect: fittedRect,
+    pageObjNum: sigField.pageObjNum,
+    fieldName: sigField.fieldName,
+  );
+  _log.i(
+    'Appearance rect ${sigField.rect} → $fittedRect '
+    '(CN length=${signerName.length})',
+  );
+
+  // ── 2. Logo Image XObject (optional soft-mask) + Appearance Form XObject ──
+  int? logoObjNum;
+  if (logo != null) {
+    int? softMaskObjNum;
+    if (logo.hasAlpha) {
+      softMaskObjNum = nextObjNum++;
+      newObjects.add(
+        _NewObject(softMaskObjNum, buildLogoSoftMaskXObject(logo)),
+      );
+    }
+    logoObjNum = nextObjNum++;
+    newObjects.add(
+      _NewObject(
+        logoObjNum,
+        buildLogoImageXObject(logo, softMaskObjNum: softMaskObjNum),
+      ),
+    );
+  }
+
+  final appearance = buildAppearance(layout: layout, logo: logo);
+  final apObjNum = nextObjNum++;
+  newObjects.add(
+    _NewObject(
+      apObjNum,
+      buildAppearanceXObject(appearance, logoImageObjNum: logoObjNum),
+    ),
+  );
 
   // ── 3. Widget annotation (if new field) ──
   int? widgetObjNum;
-  if (sigField.isNew) {
+  if (fittedField.isNew) {
     widgetObjNum = nextObjNum++;
     final widgetBody = _buildWidgetAnnotation(
-      sigField: sigField,
+      sigField: fittedField,
       sigDictObjNum: sigDictObjNum,
       appearanceObjNum: apObjNum,
     );
     newObjects.add(_NewObject(widgetObjNum, widgetBody));
   } else {
     // Existing widget — update it to point to our sig dict and appearance
-    widgetObjNum = sigField.existingWidgetObjNum;
+    widgetObjNum = fittedField.existingWidgetObjNum;
     if (widgetObjNum != null) {
       final widgetBody = _buildWidgetAnnotation(
-        sigField: sigField,
+        sigField: fittedField,
         sigDictObjNum: sigDictObjNum,
         appearanceObjNum: apObjNum,
       );
@@ -138,8 +178,8 @@ IncrementalUpdate buildIncremental({
 
   // ── 4. Updated page object (add widget to /Annots if new) ──
   int? updatedPageObjNum;
-  if (sigField.isNew && widgetObjNum != null) {
-    updatedPageObjNum = sigField.pageObjNum;
+  if (fittedField.isNew && widgetObjNum != null) {
+    updatedPageObjNum = fittedField.pageObjNum;
     final pageBody = _buildUpdatedPage(
       pdfStr: pdfStr,
       pdf: pdf,
@@ -157,7 +197,7 @@ IncrementalUpdate buildIncremental({
   final fieldRef = PdfRef(widgetObjNum ?? sigDictObjNum, 0);
   final acroFormBody = buildAcroFormDict(
     existingFieldRefs: existingFieldRefs,
-    newFieldRef: sigField.isNew ? fieldRef : null,
+    newFieldRef: fittedField.isNew ? fieldRef : null,
     sigFlags: 3,
   );
 

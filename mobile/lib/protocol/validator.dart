@@ -1,9 +1,9 @@
-// SignBridge Protocol v1.0.3 — Request validation
+// SignBridge Protocol v1.0 — Request validation
 
 import 'errors.dart';
 import 'models.dart';
 
-const String supportedVersion = '1.0.3';
+const String supportedVersion = '1.0';
 
 /// Validates a [SignRequest] and throws [SigningError] on failure.
 void validateRequest(SignRequest request) {

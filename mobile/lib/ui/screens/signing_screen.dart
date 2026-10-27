@@ -1,11 +1,16 @@
 // SignBridge — Signing screen (active signing flow with NFC)
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../protocol/models.dart';
 import '../../protocol/errors.dart';
+import '../../processing/engine.dart';
 import '../../processing/request_handler.dart';
 import 'can_screen.dart';
 import 'pin_screen.dart';
@@ -16,9 +21,13 @@ final _log = Logger(printer: PrettyPrinter(methodCount: 0));
 const _canStorageKey = 'signbridge_can';
 
 class SigningScreen extends StatefulWidget {
-  final SignRequest request;
+  final SignRequest? request;
+  final bool localPoc;
 
-  const SigningScreen({super.key, required this.request});
+  const SigningScreen({super.key, required SignRequest this.request})
+    : localPoc = false;
+
+  const SigningScreen.localPoc({super.key}) : request = null, localPoc = true;
 
   @override
   State<SigningScreen> createState() => _SigningScreenState();
@@ -44,8 +53,49 @@ class _SigningScreenState extends State<SigningScreen> {
     _processing = true;
 
     try {
+      if (widget.localPoc) {
+        final raw = await rootBundle.load(
+          'assets/poc/signbridge-poc-acroform.pdf',
+        );
+        final signed = await Engine().signLocalPdf(
+          pdfBytes: raw.buffer.asUint8List(
+            raw.offsetInBytes,
+            raw.lengthInBytes,
+          ),
+          requestCan: _requestCan,
+          requestPin: _requestPin,
+          onProgress: _onProgress,
+          fieldLabel: 'Signature1',
+        );
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/signbridge-poc-signed.pdf');
+        await file.writeAsBytes(signed, flush: true);
+        // ignore: avoid_print
+        print('SB saved ${file.path}');
+
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ResultScreen(
+              success: true,
+              title: 'PoC signed',
+              message:
+                  'Signed PDF saved on the phone:\n${file.path}\n\n'
+                  'Pull it with:\n'
+                  'adb exec-out run-as ro.ase.signbridge.signbridge_mobile '
+                  'cat app_flutter/signbridge-poc-signed.pdf > signed-poc.pdf',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final request = widget.request;
+      if (request == null) {
+        throw StateError('Missing sign request');
+      }
       await _handler.processRequest(
-        widget.request,
+        request,
         requestCan: _requestCan,
         requestPin: _requestPin,
         onProgress: _onProgress,
@@ -61,8 +111,8 @@ class _SigningScreenState extends State<SigningScreen> {
           ),
         ),
       );
-    } on SigningError catch (e) {
-      _log.e('Signing failed: $e');
+    } on SigningError catch (e, st) {
+      _log.e('Signing failed: $e', error: e, stackTrace: st);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -73,8 +123,8 @@ class _SigningScreenState extends State<SigningScreen> {
           ),
         ),
       );
-    } catch (e) {
-      _log.e('Unexpected error: $e');
+    } catch (e, st) {
+      _log.e('Unexpected error: $e', error: e, stackTrace: st);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -100,11 +150,21 @@ class _SigningScreenState extends State<SigningScreen> {
   }
 
   Future<String?> _requestCan() async {
+    if (!mounted) return null;
+    setState(() {
+      _status = 'Checking CAN...';
+      _showNfcPrompt = false;
+    });
+
     // Try stored CAN first
     final stored = await _storage.read(key: _canStorageKey);
-    if (stored != null && stored.length == 6) return stored;
+    if (stored != null && stored.length == 6) {
+      // ignore: avoid_print
+      print('SB using stored CAN (length 6). Change it from the home screen if it is wrong.');
+      return stored;
+    }
 
-    // Ask user for CAN
+    // No stored CAN — show CAN entry screen
     if (!mounted) return null;
     final can = await Navigator.of(context).push<String>(
       MaterialPageRoute(
@@ -112,6 +172,7 @@ class _SigningScreenState extends State<SigningScreen> {
             CanScreen(onSubmit: (can) => Navigator.of(context).pop(can)),
       ),
     );
+    // CAN is saved by CanScreen itself via FlutterSecureStorage
     return can;
   }
 
@@ -138,13 +199,14 @@ class _SigningScreenState extends State<SigningScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final objectCount =
-        (widget.request.objects?.length ?? 0) +
-        (widget.request.objectGroups?.fold<int>(
-              0,
-              (sum, g) => sum + g.objects.length,
-            ) ??
-            0);
+    final objectCount = widget.localPoc
+        ? 1
+        : (widget.request!.objects?.length ?? 0) +
+              (widget.request!.objectGroups?.fold<int>(
+                    0,
+                    (sum, g) => sum + g.objects.length,
+                  ) ??
+                  0);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Signing')),

@@ -2,14 +2,18 @@
 //
 // Password Authenticated Connection Establishment (PACE) establishes a
 // secure messaging channel between the app and the card using a shared
-// secret (CAN — Card Access Number, 6 digits).
+// secret (CAN or PIN).
 //
 // This implementation supports ECDH-GM (Generic Mapping) with AES-CBC-CMAC,
 // which is the variant used by Romanian CEI cards.
 //
+// For eSign on Romanian CEI, the PKI applet only supports PACE with CAN
+// (password type 0x02). After PACE establishes the secure channel, the
+// eSign PIN is verified separately via VERIFY through SM.
+//
 // Protocol steps:
 //   Step 0: Read EF.CardAccess → parse PACE OID + domain parameters
-//   Step 1: Request encrypted nonce → decrypt with CAN-derived key
+//   Step 1: Request encrypted nonce → decrypt with password-derived key
 //   Step 2: Map nonce to new EC generator point
 //   Step 3: Perform ECDH key agreement on mapped domain
 //   Step 4: Derive session keys, mutual authentication via MAC tokens
@@ -164,14 +168,24 @@ PaceInfo? _tryParsePaceSecurityInfo(ASN1Object obj) {
 /// This decouples PACE from the NFC transport so it can be tested.
 typedef Transceive = Future<Uint8List> Function(Uint8List command);
 
+/// PACE password type constants (BSI TR-03110 Part 3, Table 6).
+class PacePasswordType {
+  static const int mrz = 0x01;
+  static const int can = 0x02;
+  static const int pin = 0x03;
+  static const int puk = 0x04;
+}
+
 /// Run the full PACE protocol and return a [SecureMessaging] session.
 ///
 /// [transceive] sends raw bytes to the card and returns raw response.
-/// [can] is the 6-digit Card Access Number.
+/// [password] is the shared secret (PIN or CAN).
+/// [passwordType] is 0x02 for CAN, 0x03 for PIN (see [PacePasswordType]).
 /// [paceInfo] is parsed from EF.CardAccess.
 Future<SecureMessaging> performPace({
   required Transceive transceive,
-  required String can,
+  required String password,
+  int passwordType = PacePasswordType.pin,
   required PaceInfo paceInfo,
 }) async {
   if (!paceInfo.isEcdhGm) {
@@ -188,16 +202,52 @@ Future<SecureMessaging> performPace({
   );
 
   final keyLen = paceInfo.keyLength;
+  _log.d(
+    'PACE params: OID=${paceInfo.oid.join(".")}, '
+    'paramId=${paceInfo.parameterId}, keyLen=$keyLen, '
+    'fieldSize=${domainParams.curve.fieldSize}',
+  );
 
-  // Derive Kπ from CAN using KDF (SHA-1 key derivation per BSI TR-03110)
-  final kPi = _kdfPi(can, keyLen);
-  _log.d('PACE: Kπ derived from CAN');
+  // Wrap transceive with logging
+  Future<Uint8List> logTransceive(Uint8List cmd) async {
+    final hex = cmd.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    _log.d('PACE >>> $hex');
+    final resp = await transceive(cmd);
+    final rHex = resp.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    _log.d('PACE <<< $rHex');
+    return resp;
+  }
+
+  // Derive Kπ from password using KDF (BSI TR-03110)
+  final kPi = _kdfPi(password, keyLen);
+  _log.d(
+    'PACE: Kπ derived from password (type=0x${passwordType.toRadixString(16)})',
+  );
+
+  // ── MSE:SET AT — Select PACE protocol and password reference ────────────
+  _log.i('PACE: MSE:SET AT (select PACE protocol)');
+  final oidDer = ASN1ObjectIdentifier.fromComponents(paceInfo.oid).encodedBytes;
+  // Extract OID value bytes (skip tag 0x06 and single-byte length)
+  final oidValue = oidDer.sublist(2);
+  // Data: cryptographic mechanism (tag 0x80) + password reference (tag 0x83)
+  final mseData = Uint8List.fromList([
+    0x80, oidValue.length, ...oidValue,
+    0x83, 0x01, passwordType, // 0x02=CAN, 0x03=PIN
+  ]);
+  final mseCmd = mseSet(p1: 0xC1, p2: 0xA4, data: mseData);
+  final mseResp = ResponseApdu.fromBytes(await logTransceive(mseCmd.encode()));
+  if (!mseResp.isOk) {
+    throw StateError('MSE:SET AT failed: SW=${mseResp.sw.toRadixString(16)}');
+  }
+  _log.d('PACE: MSE:SET AT OK');
 
   // ── Step 0: General Authenticate — Request encrypted nonce ──────────────
   _log.i('PACE step 0: Requesting encrypted nonce');
   final step0Data = Uint8List.fromList([0x7C, 0x00]); // empty dynamic auth data
   final step0Cmd = generalAuthenticate(data: step0Data, isChaining: true);
-  final step0Resp = ResponseApdu.fromBytes(await transceive(step0Cmd.encode()));
+  final step0Resp = ResponseApdu.fromBytes(
+    await logTransceive(step0Cmd.encode()),
+  );
 
   if (!step0Resp.isOk) {
     throw StateError(
@@ -229,9 +279,15 @@ Future<SecureMessaging> performPace({
 
   // Send our public key PK_Map_1
   final pk1Encoded = _encodeEcPoint(pk1, curve);
+  _log.d(
+    'PACE step 2: pk1Encoded=${pk1Encoded.length} bytes, first byte=0x${pk1Encoded[0].toRadixString(16)}',
+  );
   final step2Data = _wrapDynAuth(0x81, pk1Encoded);
+  _log.d('PACE step 2: wrapped data=${step2Data.length} bytes');
   final step2Cmd = generalAuthenticate(data: step2Data, isChaining: true);
-  final step2Resp = ResponseApdu.fromBytes(await transceive(step2Cmd.encode()));
+  final step2Resp = ResponseApdu.fromBytes(
+    await logTransceive(step2Cmd.encode()),
+  );
 
   if (!step2Resp.isOk) {
     throw StateError(
@@ -266,7 +322,9 @@ Future<SecureMessaging> performPace({
   final pk2Encoded = _encodeEcPoint(pk2, curve);
   final step3Data = _wrapDynAuth(0x83, pk2Encoded);
   final step3Cmd = generalAuthenticate(data: step3Data, isChaining: true);
-  final step3Resp = ResponseApdu.fromBytes(await transceive(step3Cmd.encode()));
+  final step3Resp = ResponseApdu.fromBytes(
+    await logTransceive(step3Cmd.encode()),
+  );
 
   if (!step3Resp.isOk) {
     throw StateError(
@@ -283,10 +341,10 @@ Future<SecureMessaging> performPace({
 
   // Shared secret K = sk2 * cardPk2
   final sharedK = (cardPk2 * sk2)!;
-  final sharedSecret = _bigIntToBytes(
-    sharedK.x!.toBigInteger()!,
-    (curve.fieldSize + 7) ~/ 8,
-  );
+  final fieldSize = (curve.fieldSize + 7) ~/ 8;
+  // getEncoded normalizes projective→affine; extract x from 04||x||y
+  final sharedKEnc = sharedK.getEncoded(false);
+  final sharedSecret = Uint8List.fromList(sharedKEnc.sublist(1, 1 + fieldSize));
 
   // ── Derive session keys ─────────────────────────────────────────────────
   final ksEnc = _kdfEnc(sharedSecret, keyLen);
@@ -307,7 +365,9 @@ Future<SecureMessaging> performPace({
   // Send our MAC token, receive card's MAC token
   final step4Data = _wrapDynAuth(0x85, ourMac.sublist(0, 8));
   final step4Cmd = generalAuthenticate(data: step4Data, isChaining: false);
-  final step4Resp = ResponseApdu.fromBytes(await transceive(step4Cmd.encode()));
+  final step4Resp = ResponseApdu.fromBytes(
+    await logTransceive(step4Cmd.encode()),
+  );
 
   if (!step4Resp.isOk) {
     throw StateError(
@@ -404,14 +464,9 @@ Uint8List _computeCmac(Uint8List key, Uint8List data) {
 // ── EC point encoding/decoding ──────────────────────────────────────────────
 
 Uint8List _encodeEcPoint(ECPoint point, ECCurve curve) {
-  final fieldSize = (curve.fieldSize + 7) ~/ 8;
-  final x = _bigIntToBytes(point.x!.toBigInteger()!, fieldSize);
-  final y = _bigIntToBytes(point.y!.toBigInteger()!, fieldSize);
-  final result = Uint8List(1 + fieldSize * 2);
-  result[0] = 0x04; // uncompressed
-  result.setRange(1, 1 + fieldSize, x);
-  result.setRange(1 + fieldSize, 1 + fieldSize * 2, y);
-  return result;
+  // getEncoded(false) returns uncompressed format (04 || x || y)
+  // and handles normalization from projective to affine coordinates
+  return Uint8List.fromList(point.getEncoded(false));
 }
 
 ECPoint _decodeEcPoint(Uint8List encoded, ECCurve curve) {
@@ -428,16 +483,6 @@ BigInt _bytesToBigInt(Uint8List bytes) {
   var result = BigInt.zero;
   for (final b in bytes) {
     result = (result << 8) | BigInt.from(b);
-  }
-  return result;
-}
-
-Uint8List _bigIntToBytes(BigInt value, int length) {
-  final result = Uint8List(length);
-  var v = value;
-  for (var i = length - 1; i >= 0; i--) {
-    result[i] = (v & BigInt.from(0xFF)).toInt();
-    v >>= 8;
   }
   return result;
 }

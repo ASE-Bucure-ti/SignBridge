@@ -14,14 +14,7 @@ class PinScreen extends StatefulWidget {
 }
 
 class _PinScreenState extends State<PinScreen> {
-  final _controller = TextEditingController();
   String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +42,6 @@ class _PinScreenState extends State<PinScreen> {
             PinCodeTextField(
               appContext: context,
               length: 6,
-              controller: _controller,
               obscureText: true,
               keyboardType: TextInputType.number,
               animationType: AnimationType.fade,

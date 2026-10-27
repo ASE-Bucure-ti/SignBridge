@@ -19,9 +19,10 @@ import '../pdf/parser.dart';
 import '../pdf/acroform.dart';
 import '../pdf/signer.dart';
 import '../pdf/incremental_writer.dart';
+import '../pdf/appearance.dart';
+import '../pdf/appearance_assets.dart';
 
 import '../nfc/card_reader.dart';
-import '../nfc/nfc_manager.dart';
 
 final _log = Logger(printer: PrettyPrinter(methodCount: 0));
 
@@ -71,7 +72,7 @@ class Engine {
 
   /// Process a validated [SignRequest].
   ///
-  /// [requestCan] — called to get the CAN from the user (shown once, cached).
+  /// [requestCan] — called to get the CAN from the user (stored persistently).
   /// [requestPin] — called to get the eSign PIN from the user.
   /// [onProgress] — UI progress updates.
   Future<void> process(
@@ -88,7 +89,7 @@ class Engine {
       throw const SigningError(ErrorCode.badRequest, 'No objects to sign');
     }
 
-    // ── Phase A: Download all content (before NFC, to minimize card time) ──
+    // ── Phase A: Download all content (before NFC) ──
     final downloadedContent = <String, Uint8List>{};
     for (final item in workItems) {
       try {
@@ -101,44 +102,16 @@ class Engine {
       }
     }
 
-    // ── Phase B: Pre-parse PDFs and compute digests (before NFC) ──
+    // Non-PDF digests can be computed before the card session.
     final preparedPdfs = <String, PreparedPdf>{};
     final preparedData = <String, Uint8List>{};
     for (final item in workItems) {
-      try {
-        onProgress?.call(item.id, 'Preparing document...', 15);
-        final raw = downloadedContent[item.id]!;
-
-        if (item.dataType == DataType.pdf) {
-          final pdf = parsePdf(raw);
-          final sigField = findOrPlanSigField(pdf, item.pdfOptions?.label);
-          final now = DateTime.now().toUtc();
-
-          // Build incremental update with sig dict placeholders
-          final update = buildIncremental(
-            pdf: pdf,
-            sigField: sigField,
-            signerName: item.certId, // placeholder; replaced with cert CN later
-            signingTime: now,
-          );
-
-          // Compute byte-range digest (this is what the card will sign)
-          final prepared = prepareForSigning(update.bytes, useSha384: true);
-          preparedPdfs[item.id] = prepared;
-        } else {
-          // Non-PDF: hash the raw content directly
-          preparedData[item.id] = sha384(raw);
-        }
-      } catch (e) {
-        _log.e('Prepare failed for ${item.id}: $e');
-        await _postError(item, request.requestId, e);
-        rethrow;
+      if (item.dataType != DataType.pdf) {
+        preparedData[item.id] = sha384(downloadedContent[item.id]!);
       }
     }
 
-    // ── Phase C: NFC interaction (PACE + read cert + sign all hashes) ──
-    onProgress?.call(workItems.first.id, 'Tap your eID card...', 25);
-
+    onProgress?.call(workItems.first.id, 'Enter CAN', 20);
     final can = await requestCan();
     if (can == null) {
       throw const SigningError(
@@ -147,6 +120,7 @@ class Engine {
       );
     }
 
+    onProgress?.call(workItems.first.id, 'Enter your eSign PIN', 25);
     final pin = await requestPin();
     if (pin == null) {
       throw const SigningError(
@@ -155,98 +129,132 @@ class Engine {
       );
     }
 
-    // Start NFC session and perform card operations
-    final nfc = NfcManager();
+    onProgress?.call(workItems.first.id, 'Tap your eID card...', 30);
+
+    final cardReader = CardReader();
     late CertificateInfo certInfo;
     final signatures = <String, Uint8List>{};
+    AppearanceLogo? logo;
+    try {
+      logo = await loadAppearanceLogo();
+    } catch (e) {
+      _log.w('Signature logo not loaded: $e');
+    }
 
     try {
-      await nfc.startSession(alertMessage: 'Hold your eID card to the phone');
+      await cardReader.connect(
+        iosAlertMessage: 'Hold your eID card to the phone',
+      );
 
-      final cardReader = CardReader(nfc);
+      // CardAccess, applet select, then one PACE with the CAN.
+      // The eSign PIN is not sent in this step.
+      onProgress?.call(workItems.first.id, 'Authenticating...', 35);
+      await cardReader.openSigningSession(can);
 
-      // 1. Read PACE info from card
-      onProgress?.call(workItems.first.id, 'Reading card...', 30);
-      final paceInfo = await cardReader.readPaceInfo();
+      // Certificate first. Failure here does not consume a PIN try.
+      onProgress?.call(workItems.first.id, 'Reading certificate...', 45);
+      final cardCert = await cardReader.readSigningCertificate();
+      certInfo = parseCertificate(cardCert.derBytes);
+      final cn = certInfo.subjectCn ?? request.cert.certId;
+      // ignore: avoid_print
+      print('SB certificate CN=$cn');
 
-      // 2. PACE authentication with CAN
-      onProgress?.call(workItems.first.id, 'Authenticating...', 40);
-      await cardReader.authenticate(can, paceInfo);
-
-      // 3. Select PKI applet
-      await cardReader.selectPkiApplet();
-
-      // 4. Verify eSign PIN
-      onProgress?.call(workItems.first.id, 'Verifying PIN...', 50);
-      final pinResult = await cardReader.verifyEsignPin(pin);
-      if (pinResult >= 0) {
+      if (!certIdMatches(certInfo, request.cert.certId)) {
         throw SigningError(
-          ErrorCode.signFailed,
-          'Wrong PIN ($pinResult retries remaining)',
+          ErrorCode.badRequest,
+          'Card certificate CN="$cn" does not match cert.certId='
+          '"${request.cert.certId}"',
         );
       }
 
-      // 5. Read signing certificate
-      onProgress?.call(workItems.first.id, 'Reading certificate...', 55);
-      final cardCert = await cardReader.readSigningCertificate();
-      certInfo = parseCertificate(cardCert.derBytes);
+      // Appearance needs the real CN, so PDF prep happens after cert read.
+      onProgress?.call(workItems.first.id, 'Preparing document...', 50);
+      final signingTime = DateTime.now();
+      for (final item in workItems) {
+        if (item.dataType != DataType.pdf) continue;
+        try {
+          final pdf = parsePdf(downloadedContent[item.id]!);
+          final sigField = findOrPlanSigField(pdf, item.pdfOptions?.label);
+          if (sigField.isNew) {
+            _log.w(
+              'No existing AcroForm field for label='
+              '"${item.pdfOptions?.label}"; creating "${sigField.fieldName}"',
+            );
+          } else {
+            _log.i(
+              'Reusing AcroForm field "${sigField.fieldName}" '
+              'widget=${sigField.existingWidgetObjNum}',
+            );
+          }
+          final update = buildIncremental(
+            pdf: pdf,
+            sigField: sigField,
+            signerName: cn,
+            signingTime: signingTime.toUtc(),
+            appearanceTimeLabel: formatAppearanceDateTime(signingTime),
+            logo: logo,
+          );
+          preparedPdfs[item.id] = prepareForSigning(
+            update.bytes,
+            useSha384: true,
+          );
+        } catch (e) {
+          _log.e('Prepare failed for ${item.id}: $e');
+          await _postError(item, request.requestId, e);
+          rethrow;
+        }
+      }
 
-      // 6. Configure signing algorithm
+      onProgress?.call(workItems.first.id, 'Verifying PIN...', 55);
+      final pinResult = await cardReader.verifyEsignPin(pin);
+      if (pinResult >= 0) {
+        throw SigningError(
+          ErrorCode.badRequest,
+          'Wrong PIN ($pinResult retries remaining). Stop and do not retry.',
+        );
+      }
+
       await cardReader.mseSetSigning();
 
-      // 7. Sign each document's hash
       for (var i = 0; i < workItems.length; i++) {
         final item = workItems[i];
         final pct = 60 + ((i / workItems.length) * 20).round();
         onProgress?.call(item.id, 'Signing document ${i + 1}...', pct);
 
-        Uint8List contentDigest;
-        if (preparedPdfs.containsKey(item.id)) {
-          contentDigest = preparedPdfs[item.id]!.digest;
-        } else {
-          contentDigest = preparedData[item.id]!;
-        }
+        final contentDigest = preparedPdfs.containsKey(item.id)
+            ? preparedPdfs[item.id]!.digest
+            : preparedData[item.id]!;
 
-        // Build CMS signed attributes
         final signedAttrs = buildSignedAttributes(
           contentDigest: contentDigest,
           cert: certInfo,
           signingTime: DateTime.now().toUtc(),
           digestAlgorithm: CmsDigestAlgorithm.sha384,
         );
-
-        // Hash the signed attributes (this is what the card actually signs)
         final attrHash = hashSignedAttributes(
           signedAttrs,
           CmsDigestAlgorithm.sha384,
         );
-
-        // Card signs the hash
         final cardSig = await cardReader.signHash(attrHash);
-
-        // Build complete CMS envelope
-        final cms = buildCms(
+        signatures[item.id] = buildCms(
           signedAttributesDer: signedAttrs,
           signature: cardSig.signatureBytes,
           cert: certInfo,
           digestAlgorithm: CmsDigestAlgorithm.sha384,
           signatureAlgorithm: CmsSignatureAlgorithm.ecdsaSha384,
         );
-
-        signatures[item.id] = cms;
       }
     } finally {
-      await nfc.endSession();
+      await cardReader.disconnect();
     }
 
-    // ── Phase D: Embed signatures and upload ──
+    // ── Embed signatures and upload ──
     for (final item in workItems) {
       try {
         final pct =
             80 + ((workItems.indexOf(item) / workItems.length) * 15).round();
         onProgress?.call(item.id, 'Uploading...', pct);
 
-        // Post progress callback
         await _callbackPoster.postProgress(
           item.callbacks,
           ProgressCallbackPayload(
@@ -257,25 +265,15 @@ class Engine {
           ),
         );
 
-        Uint8List signedContent;
-        if (preparedPdfs.containsKey(item.id)) {
-          // Embed CMS into the PDF
-          signedContent = embedSignature(
-            preparedPdfs[item.id]!,
-            signatures[item.id]!,
-          );
-        } else {
-          // For non-PDF: the signed content IS the CMS envelope
-          signedContent = signatures[item.id]!;
-        }
+        final signedContent = preparedPdfs.containsKey(item.id)
+            ? embedSignature(preparedPdfs[item.id]!, signatures[item.id]!)
+            : signatures[item.id]!;
 
-        // Upload
         final (statusCode, responseBody) = await _uploader.upload(
           config: item.upload,
           data: signedContent,
         );
 
-        // Success callback
         onProgress?.call(item.id, 'Done', 100);
         await _callbackPoster.postSuccess(
           item.callbacks,
@@ -295,6 +293,119 @@ class Engine {
     }
 
     _log.i('Engine: all ${workItems.length} object(s) processed');
+  }
+
+  /// Sign a local PDF on the card and return the signed bytes.
+  ///
+  /// Defaults to the bundled AcroForm PoC (`label` = Signature1).
+  /// Nothing is downloaded or uploaded.
+  Future<Uint8List> signLocalPdf({
+    required Uint8List pdfBytes,
+    required CanRequester requestCan,
+    required PinRequester requestPin,
+    EngineProgressCallback? onProgress,
+    String fieldLabel = 'Signature1',
+  }) async {
+    const id = 'poc-pdf';
+    _log.i('PoC: local PDF ${pdfBytes.length} bytes, label=$fieldLabel');
+    // ignore: avoid_print
+    print('SB PoC local PDF ${pdfBytes.length} bytes label=$fieldLabel');
+
+    onProgress?.call(id, 'Enter CAN', 20);
+    final can = await requestCan();
+    if (can == null) {
+      throw const SigningError(ErrorCode.cancelledByUser, 'CAN entry cancelled');
+    }
+
+    onProgress?.call(id, 'Enter your eSign PIN', 25);
+    final pin = await requestPin();
+    if (pin == null) {
+      throw const SigningError(ErrorCode.cancelledByUser, 'PIN entry cancelled');
+    }
+
+    onProgress?.call(id, 'Tap your eID card...', 30);
+    final cardReader = CardReader();
+    AppearanceLogo? logo;
+    try {
+      logo = await loadAppearanceLogo();
+    } catch (e) {
+      _log.w('Signature logo not loaded: $e');
+    }
+
+    late final PreparedPdf prepared;
+    late final Uint8List cms;
+    try {
+      await cardReader.connect(
+        iosAlertMessage: 'Hold your eID card to the phone',
+      );
+      onProgress?.call(id, 'Authenticating...', 35);
+      await cardReader.openSigningSession(can);
+
+      onProgress?.call(id, 'Reading certificate...', 45);
+      final cardCert = await cardReader.readSigningCertificate();
+      final certInfo = parseCertificate(cardCert.derBytes);
+      final cn = certInfo.subjectCn ?? 'Unknown';
+      // ignore: avoid_print
+      print('SB certificate CN=$cn');
+
+      onProgress?.call(id, 'Preparing document...', 50);
+      final signingTime = DateTime.now();
+      final pdf = parsePdf(pdfBytes);
+      final sigField = findOrPlanSigField(pdf, fieldLabel);
+      // ignore: avoid_print
+      print(
+        'SB AcroForm field="${sigField.fieldName}" '
+        'existing=${!sigField.isNew} widget=${sigField.existingWidgetObjNum}',
+      );
+      final update = buildIncremental(
+        pdf: pdf,
+        sigField: sigField,
+        signerName: cn,
+        signingTime: signingTime.toUtc(),
+        appearanceTimeLabel: formatAppearanceDateTime(signingTime),
+        reason: 'SignBridge local PoC',
+        logo: logo,
+      );
+      prepared = prepareForSigning(update.bytes, useSha384: true);
+
+      onProgress?.call(id, 'Verifying PIN...', 55);
+      final pinResult = await cardReader.verifyEsignPin(pin);
+      if (pinResult >= 0) {
+        throw SigningError(
+          ErrorCode.badRequest,
+          'Wrong PIN ($pinResult retries remaining). Stop and do not retry.',
+        );
+      }
+
+      await cardReader.mseSetSigning();
+      onProgress?.call(id, 'Signing document...', 70);
+      final signedAttrs = buildSignedAttributes(
+        contentDigest: prepared.digest,
+        cert: certInfo,
+        signingTime: DateTime.now().toUtc(),
+        digestAlgorithm: CmsDigestAlgorithm.sha384,
+      );
+      final attrHash = hashSignedAttributes(
+        signedAttrs,
+        CmsDigestAlgorithm.sha384,
+      );
+      final cardSig = await cardReader.signHash(attrHash);
+      cms = buildCms(
+        signedAttributesDer: signedAttrs,
+        signature: cardSig.signatureBytes,
+        cert: certInfo,
+        digestAlgorithm: CmsDigestAlgorithm.sha384,
+        signatureAlgorithm: CmsSignatureAlgorithm.ecdsaSha384,
+      );
+    } finally {
+      await cardReader.disconnect();
+    }
+
+    onProgress?.call(id, 'Writing signed PDF...', 90);
+    final signed = embedSignature(prepared, cms);
+    // ignore: avoid_print
+    print('SB signed PDF ${signed.length} bytes, CMS ${cms.length} bytes');
+    return signed;
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -324,9 +435,10 @@ class Engine {
         // Build a ContentDefinition from group-level settings
         ContentDefinition content;
         if (group.mode == 'remote') {
+          final template = group.downloadUrl ?? '';
           content = ContentDefinition.fromJson({
             'mode': 'remote',
-            'downloadUrl': group.downloadUrl ?? '',
+            'downloadUrl': template.replaceAll('<objectId>', gObj.id),
             'headers': group.downloadHeaders,
           });
         } else {
@@ -337,13 +449,20 @@ class Engine {
           });
         }
 
+        final upload = UploadConfig(
+          uploadUrl: group.upload.uploadUrl.replaceAll('<objectId>', gObj.id),
+          httpMethod: group.upload.httpMethod,
+          headers: group.upload.headers,
+          signedContentType: group.upload.signedContentType,
+        );
+
         items.add(
           _WorkItem(
             id: gObj.id,
             dataType: group.dataType,
             content: content,
             pdfOptions: group.pdfOptions,
-            upload: group.upload,
+            upload: upload,
             callbacks: group.callbacks,
             certId: request.cert.certId,
           ),

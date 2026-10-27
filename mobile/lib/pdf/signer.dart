@@ -81,6 +81,7 @@ String buildSigDict({
   String reason = 'Signed by SignBridge',
   String location = 'SignBridge Mobile',
   String? contactInfo,
+  String? name,
 }) {
   final buf = StringBuffer();
   buf.writeln('<<');
@@ -90,13 +91,23 @@ String buildSigDict({
   buf.writeln('  /ByteRange $_byteRangePlaceholder');
   buf.writeln('  /Contents $_contentsPlaceholder');
   buf.writeln('  /M (D:$signingTime)');
-  buf.writeln('  /Reason ($reason)');
-  buf.writeln('  /Location ($location)');
+  buf.writeln('  /Reason (${_pdfString(reason)})');
+  buf.writeln('  /Location (${_pdfString(location)})');
+  if (name != null && name.isNotEmpty) {
+    buf.writeln('  /Name (${_pdfString(name)})');
+  }
   if (contactInfo != null) {
-    buf.writeln('  /ContactInfo ($contactInfo)');
+    buf.writeln('  /ContactInfo (${_pdfString(contactInfo)})');
   }
   buf.writeln('>>');
   return buf.toString();
+}
+
+String _pdfString(String s) {
+  return s
+      .replaceAll('\\', '\\\\')
+      .replaceAll('(', '\\(')
+      .replaceAll(')', '\\)');
 }
 
 /// Prepare the PDF for signing by locating the /Contents placeholder

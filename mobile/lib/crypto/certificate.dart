@@ -10,6 +10,7 @@
 
 import 'dart:typed_data';
 import 'package:asn1lib/asn1lib.dart';
+import 'package:crypto/crypto.dart';
 
 /// Parsed fields from an X.509 certificate.
 class CertificateInfo {
@@ -211,8 +212,36 @@ String normalizeForMatching(String s) {
   return result;
 }
 
-/// Check if a certificate's CN matches the requested certId.
+/// Check if [cert] matches the requested [certId].
+///
+/// Order matches the desktop host:
+///   1. Serial number (hex, case-insensitive)
+///   2. SHA-1 thumbprint of the DER certificate (hex)
+///   3. Normalized subject CN (exact after normalize)
+///   4. Fuzzy CN containment either way
 bool certIdMatches(CertificateInfo cert, String certId) {
-  if (cert.subjectCn == null) return false;
-  return normalizeForMatching(cert.subjectCn!) == normalizeForMatching(certId);
+  final needle = certId.trim();
+  if (needle.isEmpty) return false;
+
+  final serialHex = cert.serialNumber
+      .toRadixString(16)
+      .toUpperCase()
+      .replaceFirst(RegExp(r'^0+'), '');
+  final needleHex = needle.replaceAll(RegExp(r'[\s:]'), '').toUpperCase();
+  if (needleHex.isNotEmpty &&
+      (needleHex == serialHex ||
+          needleHex == cert.serialNumber.toRadixString(16).toUpperCase())) {
+    return true;
+  }
+
+  final thumb = sha1.convert(cert.derBytes).toString().toUpperCase();
+  if (needleHex == thumb) return true;
+
+  final cn = cert.subjectCn;
+  if (cn == null || cn.isEmpty) return false;
+  final cnNorm = normalizeForMatching(cn);
+  final needleNorm = normalizeForMatching(needle);
+  if (cnNorm == needleNorm) return true;
+  if (cnNorm.contains(needleNorm) || needleNorm.contains(cnNorm)) return true;
+  return false;
 }

@@ -168,6 +168,7 @@ CommandApdu getResponse(int length) =>
     CommandApdu(cla: 0x00, ins: 0xC0, p1: 0x00, p2: 0x00, le: length);
 
 /// GENERAL AUTHENTICATE (for PACE) — CLA=0x10 for chaining, 0x00 for last.
+/// Le=0x00 (expect up to 256 bytes) is required on ALL steps so the card returns data.
 CommandApdu generalAuthenticate({
   required Uint8List data,
   bool isChaining = true,
@@ -177,7 +178,7 @@ CommandApdu generalAuthenticate({
   p1: 0x00,
   p2: 0x00,
   data: data,
-  le: isChaining ? null : 0,
+  le: 0,
 );
 
 /// Encode a PIN string into padded 8-byte format (ISO 9564 format 2).

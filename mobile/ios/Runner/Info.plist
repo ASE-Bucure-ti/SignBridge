@@ -71,7 +71,12 @@
 	<string>SignBridge needs NFC to communicate with your electronic identity card for digital signing.</string>
 	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
 	<array>
+		<!-- ICAO eMRTD (CardAccess / legacy) -->
 		<string>A0000002471001</string>
+		<!-- Romanian CEI manager applet -->
+		<string>A000000077030C60000000FE00000500</string>
+		<!-- Romanian CEI PKI / eSign applet (PGeneric) -->
+		<string>E828BD080FD25047656E65726963</string>
 	</array>
 	<!-- Deep link URL scheme -->
 	<key>CFBundleURLTypes</key>

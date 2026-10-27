@@ -72,6 +72,7 @@ class _CanScreenState extends State<CanScreen> {
             PinCodeTextField(
               appContext: context,
               length: 6,
+              autoDisposeControllers: false,
               controller: _controller,
               keyboardType: TextInputType.number,
               animationType: AnimationType.fade,

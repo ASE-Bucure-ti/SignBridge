@@ -1,4 +1,4 @@
-// SignBridge Protocol v1.0.3 — Error types
+// SignBridge Protocol v1.0 — Error types
 
 enum ErrorCode {
   badRequest('BAD_REQUEST'),
