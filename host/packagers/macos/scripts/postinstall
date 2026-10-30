@@ -100,8 +100,8 @@ write_manifest "Firefox" \
     "${USER_HOME}/Library/Application Support/Mozilla/NativeMessagingHosts" \
     "$FIREFOX_JSON"
 
-# ─── Remove quarantine from installed files ─────────────────────────────
-xattr -r -d com.apple.quarantine "/Applications/${APP_NAME}" 2>/dev/null || true
+# Quarantine is left intact on purpose. A Developer ID–signed + notarized
+# .pkg does not need (and should not) strip com.apple.quarantine.
 
 echo "SignBridge: post-install complete. Restart browsers to activate."
 exit 0

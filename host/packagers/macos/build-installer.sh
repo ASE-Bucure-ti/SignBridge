@@ -19,9 +19,14 @@
 #  Environment variables for signing (set these or export before running):
 #    DEVELOPER_ID_APP     — "Developer ID Application: Name (TEAMID)"
 #    DEVELOPER_ID_INST    — "Developer ID Installer: Name (TEAMID)"
-#    APPLE_ID             — your Apple ID email
 #    APPLE_TEAM_ID        — 10-char team ID
-#    APP_PASSWORD         — app-specific password (or keychain ref)
+#
+#  Notarization credentials (pick ONE):
+#    NOTARY_PROFILE       — keychain profile from:
+#                           xcrun notarytool store-credentials "SignBridge-notary"
+#    — or —
+#    APPLE_ID             — your Apple ID email
+#    APP_PASSWORD         — app-specific password (appleid.apple.com → App-Specific Passwords)
 #
 #  Output: host/installers/macos/SignBridge-X.Y.Z.pkg
 # ════════════════════════════════════════════════════════════════════════
@@ -75,17 +80,20 @@ if [ "$SIGN_MODE" == "signed" ]; then
     : "${DEVELOPER_ID_APP:?Set DEVELOPER_ID_APP to your 'Developer ID Application: ...' identity}"
     : "${DEVELOPER_ID_INST:?Set DEVELOPER_ID_INST to your 'Developer ID Installer: ...' identity}"
 
-    # Sign all embedded binaries first (dylibs, .so, executables)
-    find "$DIST_DIR" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 |
+    # Sign nested Mach-O libs first, then the main executable (inside-out).
+    find "$DIST_DIR" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -111 \) -print0 |
         while IFS= read -r -d '' bin; do
+            # Skip non-Mach-O files that happen to be executable (scripts).
+            file "$bin" | grep -q 'Mach-O' || continue
+            [[ "$(basename "$bin")" == "SignBridge" ]] && continue
             codesign --force --options runtime --timestamp \
                 --sign "$DEVELOPER_ID_APP" "$bin"
         done
 
-    # Sign the main executable last
     codesign --force --options runtime --timestamp \
         --sign "$DEVELOPER_ID_APP" "$DIST_DIR/SignBridge"
 
+    codesign --verify --verbose=2 "$DIST_DIR/SignBridge"
     echo "  Code-signing complete."
 else
     echo "[2/5] Skipping code-signing (unsigned mode)."
@@ -139,18 +147,24 @@ fi
 if [ "$SIGN_MODE" == "signed" ]; then
     echo "[5/5] Notarizing with Apple..."
 
-    : "${APPLE_ID:?Set APPLE_ID to your Apple ID email}"
     : "${APPLE_TEAM_ID:?Set APPLE_TEAM_ID to your 10-char team ID}"
-    : "${APP_PASSWORD:?Set APP_PASSWORD to an app-specific password}"
 
-    xcrun notarytool submit "$FINAL_PKG" \
-        --apple-id "$APPLE_ID" \
-        --team-id "$APPLE_TEAM_ID" \
-        --password "$APP_PASSWORD" \
-        --wait
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+        xcrun notarytool submit "$FINAL_PKG" \
+            --keychain-profile "$NOTARY_PROFILE" \
+            --wait
+    else
+        : "${APPLE_ID:?Set APPLE_ID (or use NOTARY_PROFILE from store-credentials)}"
+        : "${APP_PASSWORD:?Set APP_PASSWORD (or use NOTARY_PROFILE)}"
+        xcrun notarytool submit "$FINAL_PKG" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APP_PASSWORD" \
+            --wait
+    fi
 
-    # Staple the notarization ticket to the .pkg
     xcrun stapler staple "$FINAL_PKG"
+    spctl --assess --type install -v "$FINAL_PKG" || true
 
     echo "  Notarization complete and stapled."
 else
