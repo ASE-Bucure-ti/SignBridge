@@ -59,6 +59,8 @@ if [[ "${1:-}" == "--sign" ]]; then
     SIGN_MODE="signed"
 fi
 
+ENTITLEMENTS="$SCRIPT_DIR/SignBridge.entitlements"
+
 echo "========================================"
 echo " SignBridge - Installer Build (macOS)"
 echo "========================================"
@@ -80,7 +82,14 @@ if [ "$SIGN_MODE" == "signed" ]; then
     : "${DEVELOPER_ID_APP:?Set DEVELOPER_ID_APP to your 'Developer ID Application: ...' identity}"
     : "${DEVELOPER_ID_INST:?Set DEVELOPER_ID_INST to your 'Developer ID Installer: ...' identity}"
 
+    if [ ! -f "$ENTITLEMENTS" ]; then
+        echo "ERROR: Missing entitlements file: $ENTITLEMENTS"
+        exit 1
+    fi
+
     # Sign nested Mach-O libs first, then the main executable (inside-out).
+    # Nested libs get hardened runtime; the main binary also gets entitlements
+    # so third-party PKCS#11 dylibs (different Team ID) can be dlopen()'d.
     find "$DIST_DIR" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -111 \) -print0 |
         while IFS= read -r -d '' bin; do
             # Skip non-Mach-O files that happen to be executable (scripts).
@@ -91,9 +100,13 @@ if [ "$SIGN_MODE" == "signed" ]; then
         done
 
     codesign --force --options runtime --timestamp \
+        --entitlements "$ENTITLEMENTS" \
         --sign "$DEVELOPER_ID_APP" "$DIST_DIR/SignBridge"
 
     codesign --verify --verbose=2 "$DIST_DIR/SignBridge"
+    codesign -d --entitlements :- "$DIST_DIR/SignBridge" 2>/dev/null | grep -q disable-library-validation \
+        && echo "  Entitlements OK (disable-library-validation present)." \
+        || echo "  WARNING: disable-library-validation entitlement not found on binary."
     echo "  Code-signing complete."
 else
     echo "[2/5] Skipping code-signing (unsigned mode)."

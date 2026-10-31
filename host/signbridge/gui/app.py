@@ -11,6 +11,8 @@ Responsibilities:
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 import threading
 from typing import Any, Optional
@@ -249,11 +251,23 @@ class SignBridgeWindow(QMainWindow):
         t.start()
 
     def _token_refresh_worker(self) -> None:
-        """Background thread: enumerate PKCS#11 slots (slow I/O)."""
+        """Background thread: enumerate PKCS#11 slots vendor-by-vendor.
+
+        Vendors are probed sequentially (parallel PKCS#11 on one PC/SC stack
+        deadlocks).  After each vendor we emit the cumulative signing slots so
+        a fast library (SafeNet) populates the combo immediately while a slow
+        one (IDEMIA / CEI) continues in the background.
+        """
         try:
-            all_slots = self._pkcs11.get_token_slots()
-            signing_slots = [s for s in all_slots if self._is_signing_slot(s)]
-            self._signals.tokens_refreshed.emit(signing_slots)
+
+            def _emit(all_slots: list) -> None:
+                signing = [s for s in all_slots if self._is_signing_slot(s)]
+                self._signals.tokens_refreshed.emit(signing)
+
+            self._pkcs11.iter_token_slots(
+                on_update=_emit,
+                should_pause=lambda: self._signing_in_progress,
+            )
         except Exception as exc:
             logger.debug("Token refresh error: %s", exc)
         finally:
@@ -709,4 +723,13 @@ def run_gui() -> None:
     window = SignBridgeWindow()
     window.show()
 
-    sys.exit(app.exec())
+    code = app.exec()
+    # Hard-exit: the stdin native-messaging thread is typically blocked inside
+    # BufferedReader.read while Chrome still holds the pipe. Normal Py_Finalize
+    # then hits "_enter_buffered_busy" → fatal abort → macOS crash dialog after
+    # every successful sign / cancel. Skip interpreter teardown.
+    try:
+        logging.shutdown()
+    except Exception:
+        pass
+    os._exit(code if isinstance(code, int) else 0)

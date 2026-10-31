@@ -7,8 +7,9 @@ available tokens across all of them, and opening authenticated sessions.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import pkcs11
 from pkcs11 import lib as pkcs11_lib_mod  # noqa: F401 – needed for type hints
@@ -17,6 +18,11 @@ from signbridge.config import get_pkcs11_library_paths
 from signbridge.utils.logging_setup import get_logger
 
 logger = get_logger("crypto.pkcs11_manager")
+
+# C_GetSlotList / C_GetTokenInfo can block for a long time (or forever) when
+# a vendor probes a reader owned by another middleware. Bound each probe so
+# the UI can show results from fast libraries first.
+DEFAULT_VENDOR_ENUM_TIMEOUT_S = 12.0
 
 
 class PKCS11Manager:
@@ -42,6 +48,10 @@ class PKCS11Manager:
         # Legacy single-lib fields (kept for backward-compat helpers)
         self._lib: Optional[pkcs11.lib] = None  # type: ignore[type-arg]
         self._lib_path: Optional[str] = None
+
+        # Vendors whose native enumerate hung past the timeout — skip re-entry
+        # for the rest of this process (PKCS#11 is not cancelable mid-call).
+        self._hung_vendors: set[str] = set()
 
     # ── Loading ─────────────────────────────────────────────────────────
 
@@ -101,28 +111,43 @@ class PKCS11Manager:
     def is_loaded(self) -> bool:
         return len(self._libs) > 0
 
+    @property
+    def loaded_libraries(self) -> list[tuple[str, pkcs11.lib, str]]:  # type: ignore[type-arg]
+        """Return a copy of (vendor_name, lib, path) for each loaded library."""
+        return list(self._libs)
+
     # ── Token enumeration ───────────────────────────────────────────────
 
-    def get_token_slots(self) -> list[pkcs11.Slot]:
+    def enumerate_library_slots(
+        self,
+        vendor_name: str,
+        lib: pkcs11.lib,  # type: ignore[type-arg]
+        *,
+        timeout_s: float = DEFAULT_VENDOR_ENUM_TIMEOUT_S,
+    ) -> list[pkcs11.Slot]:
         """
-        Return all slots (with token present) from **every** loaded library.
+        Enumerate token-present slots for a single vendor library.
 
-        Slots from different vendor libraries are merged into a single list.
-        Non-accessible slots (e.g. QSCD with restricted PIN) are skipped
-        with a warning rather than raising an error.
+        Runs the blocking PKCS#11 calls on a helper thread and abandons the
+        wait after *timeout_s*.  A timed-out vendor is skipped for subsequent
+        calls in this process (native PKCS#11 cannot be canceled).
         """
-        self._ensure_loaded()
-        all_slots: list[pkcs11.Slot] = []
+        if vendor_name in self._hung_vendors:
+            logger.debug("[%s] Skipping enumerate (previous call timed out)", vendor_name)
+            return []
 
-        for vendor_name, lib, lib_path in self._libs:
+        result: dict[str, object] = {"slots": None, "error": None}
+
+        def _probe() -> None:
             try:
-                slots = lib.get_slots(token_present=True)
+                raw_slots = lib.get_slots(token_present=True)
                 logger.info(
                     "[%s] Found %d slot(s) with tokens",
                     vendor_name,
-                    len(slots),
+                    len(raw_slots),
                 )
-                for slot in slots:
+                usable: list[pkcs11.Slot] = []
+                for slot in raw_slots:
                     try:
                         token = slot.get_token()
                         logger.debug(
@@ -133,7 +158,7 @@ class PKCS11Manager:
                             token.manufacturer_id,
                             token.model,
                         )
-                        all_slots.append(slot)
+                        usable.append(slot)
                     except Exception as exc:
                         logger.warning(
                             "  [%s] Slot %s: skipped (cannot read token: %s)",
@@ -141,15 +166,85 @@ class PKCS11Manager:
                             slot.slot_id,
                             exc,
                         )
+                result["slots"] = usable
             except Exception as exc:
-                logger.warning(
-                    "[%s] Failed to enumerate slots: %s",
-                    vendor_name,
-                    exc,
+                result["error"] = exc
+
+        worker = threading.Thread(
+            target=_probe, daemon=True, name=f"pkcs11-enum-{vendor_name}"
+        )
+        worker.start()
+        worker.join(timeout=timeout_s)
+
+        if worker.is_alive():
+            self._hung_vendors.add(vendor_name)
+            logger.warning(
+                "[%s] Slot enumeration timed out after %.1fs — "
+                "skipping this vendor for the rest of the session",
+                vendor_name,
+                timeout_s,
+            )
+            return []
+
+        if result["error"] is not None:
+            logger.warning(
+                "[%s] Failed to enumerate slots: %s",
+                vendor_name,
+                result["error"],
+            )
+            return []
+
+        return list(result["slots"] or [])  # type: ignore[arg-type]
+
+    def iter_token_slots(
+        self,
+        *,
+        timeout_s: float = DEFAULT_VENDOR_ENUM_TIMEOUT_S,
+        on_update: Callable[[list[pkcs11.Slot]], None] | None = None,
+        should_pause: Callable[[], bool] | None = None,
+    ) -> list[pkcs11.Slot]:
+        """
+        Enumerate vendors **one after another** (not in parallel — concurrent
+        PKCS#11 against the same PC/SC reader deadlocks).
+
+        After each vendor, *on_update* is invoked with the cumulative slot
+        list so the UI can show SafeNet tokens immediately while a slower
+        library (e.g. IDEMIA) is still probing.
+
+        If *should_pause* returns True (e.g. signing in progress), remaining
+        vendors are deferred so we do not fight an active token session.
+        """
+        self._ensure_loaded()
+        all_slots: list[pkcs11.Slot] = []
+
+        for vendor_name, lib, _lib_path in self._libs:
+            if should_pause is not None and should_pause():
+                logger.info(
+                    "Deferring remaining PKCS#11 probes (session busy); "
+                    "have %d slot(s) so far",
+                    len(all_slots),
                 )
+                break
+
+            slots = self.enumerate_library_slots(
+                vendor_name, lib, timeout_s=timeout_s
+            )
+            all_slots.extend(slots)
+            if on_update is not None:
+                on_update(list(all_slots))
 
         logger.info("Total token slots across all libraries: %d", len(all_slots))
         return all_slots
+
+    def get_token_slots(self) -> list[pkcs11.Slot]:
+        """
+        Return all slots (with token present) from **every** loaded library.
+
+        Slots from different vendor libraries are merged into a single list.
+        Non-accessible slots (e.g. QSCD with restricted PIN) are skipped
+        with a warning rather than raising an error.
+        """
+        return self.iter_token_slots()
 
     def get_all_slots(self) -> list[pkcs11.Slot]:
         """Return all slots (including empty) from every loaded library."""
