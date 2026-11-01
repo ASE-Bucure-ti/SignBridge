@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SignBridge — Politica de confidențialitate / Privacy Policy</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #15202b;
+        --muted: #5b6b7c;
+        --line: #d7dee7;
+        --bg: #f7f9fc;
+        --card: #ffffff;
+        --accent: #1a73e8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+        background: linear-gradient(180deg, #eef3fa 0%, var(--bg) 220px);
+        line-height: 1.55;
+      }
+      main {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      header {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+      }
+      h1 { margin: 0 0 8px; font-size: 1.75rem; }
+      h2 { margin: 28px 0 10px; font-size: 1.25rem; }
+      h3 { margin: 18px 0 8px; font-size: 1.05rem; }
+      p, li { color: var(--ink); }
+      .muted { color: var(--muted); }
+      .lang-switch { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+      .lang-switch a {
+        text-decoration: none;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 12px;
+        color: var(--ink);
+        background: #fff;
+      }
+      .lang-switch a.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      section[hidden] { display: none !important; }
+      ul { padding-left: 1.2rem; }
+      a { color: var(--accent); }
+      footer {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>SignBridge</h1>
+        <p class="muted" id="subtitle">
+          Politica de confidențialitate / Privacy Policy
+        </p>
+        <p class="muted">Ultima actualizare / Last updated: 1 noiembrie 2026</p>
+        <div class="lang-switch" role="navigation" aria-label="Language">
+          <a href="#ro" id="btn-ro" class="active">Română</a>
+          <a href="#en" id="btn-en">English</a>
+        </div>
+      </header>
+
+      <section id="ro" lang="ro">
+        <h2>1. Cine suntem</h2>
+        <p>
+          SignBridge este o aplicație mobilă care permite semnarea electronică a
+          documentelor cu ajutorul cărții electronice de identitate (CEI) din
+          România, prin NFC, atunci când un site web deschide aplicația prin
+          deep link.
+        </p>
+        <p>
+          Operatorul aplicației: Academia de Studii Economice din București
+          (ASE), în contextul proiectului SignBridge.
+        </p>
+        <p>
+          Contact:
+          <a href="mailto:signbridge@ase.ro">signbridge@ase.ro</a>
+        </p>
+
+        <h2>2. Ce date prelucrăm</h2>
+        <p>Aplicația poate prelucra următoarele categorii de date:</p>
+        <ul>
+          <li>
+            <strong>Numărul CAN</strong> (Card Access Number) — introdus de
+            dumneavoastră și stocat local pe telefon, în stocare securizată a
+            dispozitivului, pentru a deschide o sesiune NFC cu CEI.
+          </li>
+          <li>
+            <strong>PIN-ul pentru semnare</strong> — introdus doar pe durata
+            operațiunii de semnare; <em>nu</em> este salvat pe dispozitiv și
+            <em>nu</em> este transmis către serverele noastre.
+          </li>
+          <li>
+            <strong>Date de pe CEI necesare semnării</strong> — de exemplu
+            certificatul de semnare citit de pe card prin NFC, folosite local
+            pentru a crea semnătura.
+          </li>
+          <li>
+            <strong>Documente de semnat și documente semnate</strong> —
+            descărcate / încărcate la adresele indicate de site-ul care a
+            inițiat cererea de semnare.
+          </li>
+          <li>
+            <strong>Date tehnice minime</strong> — necesare funcționării NFC,
+            deep link-urilor și comunicării de rețea pe durata semnării.
+          </li>
+        </ul>
+
+        <h2>3. De ce prelucrăm datele</h2>
+        <ul>
+          <li>pentru a realiza semnătura electronică solicitată de dumneavoastră;</li>
+          <li>pentru a menține CAN-ul pe dispozitiv, ca să nu îl reintroduceți de fiecare dată;</li>
+          <li>pentru a livra documentul semnat către destinatarul definit de site-ul inițiator.</li>
+        </ul>
+        <p>
+          Temei: executarea unei acțiuni la cererea dumneavoastră (semnarea
+          documentului) și interesul legitim de a oferi o funcționalitate
+          sigură de semnare pe dispozitiv.
+        </p>
+
+        <h2>4. Unde sunt stocate datele</h2>
+        <ul>
+          <li>
+            CAN-ul rămâne pe telefonul dumneavoastră (stocare securizată
+            locală). Nu îl încărcăm pe servere SignBridge.
+          </li>
+          <li>
+            PIN-ul pentru semnare rămâne doar în memorie pe durata sesiunii de
+            semnare.
+          </li>
+          <li>
+            Documentele circulă între aplicație și serverele / serviciile
+            indicate de site-ul care a deschis deep link-ul. SignBridge nu
+            operează un magazin central de documente semnate în această
+            aplicație mobilă.
+          </li>
+        </ul>
+
+        <h2>5. Cu cine partajăm date</h2>
+        <p>
+          Nu vindem date cu caracter personal. Nu folosim publicitate în
+          aplicație.
+        </p>
+        <p>
+          Documentul semnat și eventualele confirmări de progres pot fi trimise
+          către destinatarul configurat de site-ul inițiator (de exemplu
+          endpoint-urile din cererea de semnare). Responsabilitatea pentru
+          prelucrarea ulterioară pe acele servere aparține operatorului
+          site-ului respectiv.
+        </p>
+        <p>
+          Putem dezvălui date dacă legea ne obligă sau dacă este necesar pentru
+          a proteja drepturile legale.
+        </p>
+
+        <h2>6. Păstrare</h2>
+        <ul>
+          <li>CAN — până îl ștergeți / înlocuiți din aplicație sau dezinstalați aplicația.</li>
+          <li>PIN pentru semnare — nu este păstrat.</li>
+          <li>Fișiere temporare pe dispozitiv — doar cât e necesar pentru semnare.</li>
+        </ul>
+
+        <h2>7. Securitate</h2>
+        <p>
+          Comunicarea cu CEI folosește mecanisme de acces protejat (inclusiv
+          PACE cu CAN) și PIN-ul pentru semnare. Recomandăm să nu lăsați
+          telefonul nesupravegheat în timpul semnării și să nu partajați CAN-ul
+          sau PIN-urile.
+        </p>
+
+        <h2>8. Copii</h2>
+        <p>
+          Aplicația este destinată persoanelor care pot folosi legal o CEI
+          pentru semnătură electronică. Nu se adresează copiilor sub 13 ani.
+        </p>
+
+        <h2>9. Drepturile dumneavoastră</h2>
+        <p>
+          Conform GDPR, puteți solicita acces, rectificare, ștergere sau
+          restricționare, după caz. Pentru CAN, îl puteți înlocui sau șterge
+          din aplicație. Pentru solicitări: 
+          <a href="mailto:signbridge@ase.ro">signbridge@ase.ro</a>.
+        </p>
+
+        <h2>10. Modificări</h2>
+        <p>
+          Putem actualiza această politică. Data de la începutul paginii
+          indică versiunea curentă.
+        </p>
+      </section>
+
+      <section id="en" lang="en" hidden>
+        <h2>1. Who we are</h2>
+        <p>
+          SignBridge is a mobile app that lets you electronically sign documents
+          with a Romanian electronic identity card (CEI) over NFC, when a
+          website opens the app via deep link.
+        </p>
+        <p>
+          App operator: Bucharest University of Economic Studies (ASE), in the
+          context of the SignBridge project.
+        </p>
+        <p>
+          Contact:
+          <a href="mailto:signbridge@ase.ro">signbridge@ase.ro</a>
+        </p>
+
+        <h2>2. What data we process</h2>
+        <ul>
+          <li>
+            <strong>CAN</strong> (Card Access Number) — entered by you and stored
+            locally on the phone in device secure storage to open an NFC session
+            with the CEI.
+          </li>
+          <li>
+            <strong>Signing PIN</strong> — entered only during the signing
+            operation; it is <em>not</em> saved on the device and is
+            <em>not</em> sent to our servers.
+          </li>
+          <li>
+            <strong>CEI data needed for signing</strong> — for example the
+            signing certificate read from the card over NFC, used locally to
+            create the signature.
+          </li>
+          <li>
+            <strong>Documents to sign and signed documents</strong> —
+            downloaded / uploaded to the addresses provided by the website that
+            started the signing request.
+          </li>
+          <li>
+            <strong>Minimal technical data</strong> — needed for NFC, deep
+            links, and network communication during signing.
+          </li>
+        </ul>
+
+        <h2>3. Why we process data</h2>
+        <ul>
+          <li>to perform the electronic signature you request;</li>
+          <li>to keep the CAN on-device so you do not re-enter it every time;</li>
+          <li>to deliver the signed document to the destination defined by the initiating website.</li>
+        </ul>
+        <p>
+          Legal basis: performing a service at your request (signing the
+          document) and the legitimate interest in providing secure on-device
+          signing.
+        </p>
+
+        <h2>4. Where data is stored</h2>
+        <ul>
+          <li>
+            The CAN stays on your phone (local secure storage). We do not upload
+            it to SignBridge servers.
+          </li>
+          <li>
+            The signing PIN stays in memory only for the signing session.
+          </li>
+          <li>
+            Documents travel between the app and the servers/services indicated
+            by the website that opened the deep link. This mobile app does not
+            operate a central archive of signed documents.
+          </li>
+        </ul>
+
+        <h2>5. Who we share data with</h2>
+        <p>
+          We do not sell personal data. The app does not show ads.
+        </p>
+        <p>
+          The signed document and optional progress callbacks may be sent to the
+          destination configured by the initiating website. Further processing
+          on those servers is the responsibility of that website’s operator.
+        </p>
+        <p>
+          We may disclose data if required by law or to protect legal rights.
+        </p>
+
+        <h2>6. Retention</h2>
+        <ul>
+          <li>CAN — until you replace/delete it in the app or uninstall the app.</li>
+          <li>Signing PIN — not retained.</li>
+          <li>Temporary files on device — only as long as needed for signing.</li>
+        </ul>
+
+        <h2>7. Security</h2>
+        <p>
+          Communication with the CEI uses protected access mechanisms (including
+          PACE with CAN) and the signing PIN. Do not leave your phone unattended
+          during signing, and do not share your CAN or PINs.
+        </p>
+
+        <h2>8. Children</h2>
+        <p>
+          The app is intended for people who can lawfully use a CEI for
+          electronic signing. It is not directed at children under 13.
+        </p>
+
+        <h2>9. Your rights</h2>
+        <p>
+          Under the GDPR you may request access, rectification, erasure, or
+          restriction where applicable. For the CAN, you can replace or clear it
+          in the app. Contact:
+          <a href="mailto:signbridge@ase.ro">signbridge@ase.ro</a>.
+        </p>
+
+        <h2>10. Changes</h2>
+        <p>
+          We may update this policy. The date at the top of the page shows the
+          current version.
+        </p>
+      </section>
+
+      <footer>
+        <p>
+          Source repository:
+          <a href="https://github.com/ASE-Bucure-ti/SignBridge">ASE-Bucure-ti/SignBridge</a>
+        </p>
+      </footer>
+    </main>
+
+    <script>
+      const ro = document.getElementById("ro");
+      const en = document.getElementById("en");
+      const btnRo = document.getElementById("btn-ro");
+      const btnEn = document.getElementById("btn-en");
+      const subtitle = document.getElementById("subtitle");
+
+      function show(lang) {
+        const isRo = lang === "ro";
+        ro.hidden = !isRo;
+        en.hidden = isRo;
+        btnRo.classList.toggle("active", isRo);
+        btnEn.classList.toggle("active", !isRo);
+        document.documentElement.lang = lang;
+        subtitle.textContent = isRo
+          ? "Politica de confidențialitate"
+          : "Privacy Policy";
+        history.replaceState(null, "", "#" + lang);
+      }
+
+      btnRo.addEventListener("click", (e) => {
+        e.preventDefault();
+        show("ro");
+      });
+      btnEn.addEventListener("click", (e) => {
+        e.preventDefault();
+        show("en");
+      });
+
+      show(location.hash === "#en" ? "en" : "ro");
+    </script>
+  </body>
+</html>
