@@ -6,12 +6,15 @@ PODS:
     - Flutter
   - flutter_secure_storage (6.0.0):
     - Flutter
+  - url_launcher_ios (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - app_links (from `.symlinks/plugins/app_links/ios`)
   - Flutter (from `Flutter`)
   - flutter_nfc_kit (from `.symlinks/plugins/flutter_nfc_kit/ios`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
 
 EXTERNAL SOURCES:
   app_links:
@@ -22,13 +25,16 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_nfc_kit/ios"
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
 
 SPEC CHECKSUMS:
   app_links: 3dbc685f76b1693c66a6d9dd1e9ab6f73d97dc0a
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   flutter_nfc_kit: e1b71583eafd2c9650bc86844a7f2d185fb414f6
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
+  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 
-PODFILE CHECKSUM: 53a6aebc29ccee84c41f92f409fc20cd4ca011f1
+PODFILE CHECKSUM: 5ecf925c721d0826c3e6da3802cc097adfed5dd0
 
 COCOAPODS: 1.17.0
