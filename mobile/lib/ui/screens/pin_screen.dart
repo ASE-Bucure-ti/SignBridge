@@ -1,10 +1,11 @@
-// SignBridge — PIN entry screen (eSign PIN, 6 digits)
+// SignBridge — PIN entry screen (signing PIN, 6 digits)
 
 import 'package:flutter/material.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 
+import '../../l10n/app_localizations.dart';
+
 class PinScreen extends StatefulWidget {
-  /// Called when the user submits a complete 6-digit PIN.
   final void Function(String pin) onSubmit;
 
   const PinScreen({super.key, required this.onSubmit});
@@ -18,8 +19,9 @@ class _PinScreenState extends State<PinScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Enter eSign PIN')),
+      appBar: AppBar(title: Text(l10n.pinScreenTitle)),
       body: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
@@ -28,12 +30,14 @@ class _PinScreenState extends State<PinScreen> {
             const Icon(Icons.lock_outline, size: 64),
             const SizedBox(height: 24),
             Text(
-              'Enter your 6-digit eSign PIN',
+              l10n.enterSigningPin,
               style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'This is the PIN you set when the card was issued.',
+              l10n.signingPinHint,
+              textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -59,9 +63,7 @@ class _PinScreenState extends State<PinScreen> {
                 ).colorScheme.surfaceContainerHigh,
               ),
               enableActiveFill: true,
-              onCompleted: (value) {
-                widget.onSubmit(value);
-              },
+              onCompleted: widget.onSubmit,
               onChanged: (_) {
                 if (_error != null) setState(() => _error = null);
               },

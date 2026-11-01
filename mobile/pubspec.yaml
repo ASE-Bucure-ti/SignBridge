@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   cupertino_icons: ^1.0.8
 
@@ -36,10 +38,11 @@ dependencies:
   app_links: ^6.3.0
 
   # Utils
-  intl: ^0.19.0
+  intl: ^0.20.3
   logger: ^2.4.0
   path_provider: ^2.1.5
   image: ^4.3.0
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +60,7 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  generate: true
   uses-material-design: true
 
   assets:

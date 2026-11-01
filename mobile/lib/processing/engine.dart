@@ -7,6 +7,7 @@ import 'package:logger/logger.dart';
 
 import '../protocol/models.dart';
 import '../protocol/errors.dart';
+import '../protocol/user_messages.dart';
 import '../network/downloader.dart';
 import '../network/uploader.dart';
 import '../network/callback.dart';
@@ -23,6 +24,7 @@ import '../pdf/appearance.dart';
 import '../pdf/appearance_assets.dart';
 
 import '../nfc/card_reader.dart';
+import '../util/sb_log.dart';
 
 final _log = Logger(printer: PrettyPrinter(methodCount: 0));
 
@@ -114,19 +116,13 @@ class Engine {
     onProgress?.call(workItems.first.id, 'Enter CAN', 20);
     final can = await requestCan();
     if (can == null) {
-      throw const SigningError(
-        ErrorCode.cancelledByUser,
-        'CAN entry cancelled',
-      );
+      throw const SigningError(ErrorCode.cancelledByUser, 'Cancelled.');
     }
 
     onProgress?.call(workItems.first.id, 'Enter your eSign PIN', 25);
     final pin = await requestPin();
     if (pin == null) {
-      throw const SigningError(
-        ErrorCode.cancelledByUser,
-        'PIN entry cancelled',
-      );
+      throw const SigningError(ErrorCode.cancelledByUser, 'Cancelled.');
     }
 
     onProgress?.call(workItems.first.id, 'Tap your eID card...', 30);
@@ -149,15 +145,18 @@ class Engine {
       // CardAccess, applet select, then one PACE with the CAN.
       // The eSign PIN is not sent in this step.
       onProgress?.call(workItems.first.id, 'Authenticating...', 35);
-      await cardReader.openSigningSession(can);
+      try {
+        await cardReader.openSigningSession(can);
+      } catch (e) {
+        throw asSigningError(e, objectId: workItems.first.id);
+      }
 
       // Certificate first. Failure here does not consume a PIN try.
       onProgress?.call(workItems.first.id, 'Reading certificate...', 45);
       final cardCert = await cardReader.readSigningCertificate();
       certInfo = parseCertificate(cardCert.derBytes);
       final cn = certInfo.subjectCn ?? request.cert.certId;
-      // ignore: avoid_print
-      print('SB certificate CN=$cn');
+      sbLog('certificate CN=$cn');
 
       if (!certIdMatches(certInfo, request.cert.certId)) {
         throw SigningError(
@@ -210,7 +209,7 @@ class Engine {
       if (pinResult >= 0) {
         throw SigningError(
           ErrorCode.badRequest,
-          'Wrong PIN ($pinResult retries remaining). Stop and do not retry.',
+          'Wrong PIN ($pinResult retries remaining).',
         );
       }
 
@@ -244,6 +243,9 @@ class Engine {
           signatureAlgorithm: CmsSignatureAlgorithm.ecdsaSha384,
         );
       }
+    } catch (e) {
+      if (e is SigningError) rethrow;
+      throw asSigningError(e, objectId: workItems.first.id);
     } finally {
       await cardReader.disconnect();
     }
@@ -308,19 +310,18 @@ class Engine {
   }) async {
     const id = 'poc-pdf';
     _log.i('PoC: local PDF ${pdfBytes.length} bytes, label=$fieldLabel');
-    // ignore: avoid_print
-    print('SB PoC local PDF ${pdfBytes.length} bytes label=$fieldLabel');
+    sbLog('PoC local PDF ${pdfBytes.length} bytes label=$fieldLabel');
 
     onProgress?.call(id, 'Enter CAN', 20);
     final can = await requestCan();
     if (can == null) {
-      throw const SigningError(ErrorCode.cancelledByUser, 'CAN entry cancelled');
+      throw const SigningError(ErrorCode.cancelledByUser, 'Cancelled.');
     }
 
     onProgress?.call(id, 'Enter your eSign PIN', 25);
     final pin = await requestPin();
     if (pin == null) {
-      throw const SigningError(ErrorCode.cancelledByUser, 'PIN entry cancelled');
+      throw const SigningError(ErrorCode.cancelledByUser, 'Cancelled.');
     }
 
     onProgress?.call(id, 'Tap your eID card...', 30);
@@ -339,22 +340,24 @@ class Engine {
         iosAlertMessage: 'Hold your eID card to the phone',
       );
       onProgress?.call(id, 'Authenticating...', 35);
-      await cardReader.openSigningSession(can);
+      try {
+        await cardReader.openSigningSession(can);
+      } catch (e) {
+        throw asSigningError(e, objectId: id);
+      }
 
       onProgress?.call(id, 'Reading certificate...', 45);
       final cardCert = await cardReader.readSigningCertificate();
       final certInfo = parseCertificate(cardCert.derBytes);
       final cn = certInfo.subjectCn ?? 'Unknown';
-      // ignore: avoid_print
-      print('SB certificate CN=$cn');
+      sbLog('certificate CN=$cn');
 
       onProgress?.call(id, 'Preparing document...', 50);
       final signingTime = DateTime.now();
       final pdf = parsePdf(pdfBytes);
       final sigField = findOrPlanSigField(pdf, fieldLabel);
-      // ignore: avoid_print
-      print(
-        'SB AcroForm field="${sigField.fieldName}" '
+      sbLog(
+        'AcroForm field="${sigField.fieldName}" '
         'existing=${!sigField.isNew} widget=${sigField.existingWidgetObjNum}',
       );
       final update = buildIncremental(
@@ -363,7 +366,7 @@ class Engine {
         signerName: cn,
         signingTime: signingTime.toUtc(),
         appearanceTimeLabel: formatAppearanceDateTime(signingTime),
-        reason: 'SignBridge local PoC',
+        reason: 'SignBridge sample signature',
         logo: logo,
       );
       prepared = prepareForSigning(update.bytes, useSha384: true);
@@ -373,7 +376,7 @@ class Engine {
       if (pinResult >= 0) {
         throw SigningError(
           ErrorCode.badRequest,
-          'Wrong PIN ($pinResult retries remaining). Stop and do not retry.',
+          'Wrong PIN ($pinResult retries remaining).',
         );
       }
 
@@ -397,14 +400,16 @@ class Engine {
         digestAlgorithm: CmsDigestAlgorithm.sha384,
         signatureAlgorithm: CmsSignatureAlgorithm.ecdsaSha384,
       );
+    } catch (e) {
+      if (e is SigningError) rethrow;
+      throw asSigningError(e, objectId: id);
     } finally {
       await cardReader.disconnect();
     }
 
     onProgress?.call(id, 'Writing signed PDF...', 90);
     final signed = embedSignature(prepared, cms);
-    // ignore: avoid_print
-    print('SB signed PDF ${signed.length} bytes, CMS ${cms.length} bytes');
+    sbLog('signed PDF ${signed.length} bytes, CMS ${cms.length} bytes');
     return signed;
   }
 

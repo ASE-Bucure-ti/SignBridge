@@ -4,21 +4,23 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../l10n/app_localizations.dart';
+import '../../l10n/status_l10n.dart';
 import '../../protocol/models.dart';
 import '../../protocol/errors.dart';
+import '../../protocol/user_messages.dart';
 import '../../processing/engine.dart';
 import '../../processing/request_handler.dart';
+import '../../storage/app_storage.dart';
+import '../../util/sb_log.dart';
 import 'can_screen.dart';
 import 'pin_screen.dart';
 import 'result_screen.dart';
 
 final _log = Logger(printer: PrettyPrinter(methodCount: 0));
-
-const _canStorageKey = 'signbridge_can';
 
 class SigningScreen extends StatefulWidget {
   final SignRequest? request;
@@ -35,9 +37,8 @@ class SigningScreen extends StatefulWidget {
 
 class _SigningScreenState extends State<SigningScreen> {
   final _handler = RequestHandler();
-  final _storage = const FlutterSecureStorage();
 
-  String _status = 'Preparing...';
+  String _statusKey = 'Preparing...';
   double _progress = 0;
   bool _processing = false;
   bool _showNfcPrompt = false;
@@ -51,6 +52,7 @@ class _SigningScreenState extends State<SigningScreen> {
   Future<void> _startSigning() async {
     if (_processing) return;
     _processing = true;
+    final l10n = AppLocalizations.of(context);
 
     try {
       if (widget.localPoc) {
@@ -70,20 +72,15 @@ class _SigningScreenState extends State<SigningScreen> {
         final dir = await getApplicationDocumentsDirectory();
         final file = File('${dir.path}/signbridge-poc-signed.pdf');
         await file.writeAsBytes(signed, flush: true);
-        // ignore: avoid_print
-        print('SB saved ${file.path}');
+        sbLog('saved ${file.path}');
 
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => ResultScreen(
               success: true,
-              title: 'PoC signed',
-              message:
-                  'Signed PDF saved on the phone:\n${file.path}\n\n'
-                  'Pull it with:\n'
-                  'adb exec-out run-as ro.ase.signbridge.signbridge_mobile '
-                  'cat app_flutter/signbridge-poc-signed.pdf > signed-poc.pdf',
+              title: l10n.sampleSignedTitle,
+              message: l10n.sampleSignedMessage,
             ),
           ),
         );
@@ -104,34 +101,36 @@ class _SigningScreenState extends State<SigningScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => const ResultScreen(
+          builder: (_) => ResultScreen(
             success: true,
-            title: 'Signed Successfully',
-            message: 'All documents have been signed and uploaded.',
+            title: l10n.signedSuccessfullyTitle,
+            message: l10n.signedSuccessfullyMessage,
           ),
         ),
       );
     } on SigningError catch (e, st) {
       _log.e('Signing failed: $e', error: e, stackTrace: st);
       if (!mounted) return;
+      final loc = AppLocalizations.of(context);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => ResultScreen(
             success: false,
-            title: 'Signing Failed',
-            message: e.message,
+            title: loc.signingFailedTitle,
+            message: userFacingMessage(loc, e),
           ),
         ),
       );
     } catch (e, st) {
       _log.e('Unexpected error: $e', error: e, stackTrace: st);
       if (!mounted) return;
+      final loc = AppLocalizations.of(context);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => ResultScreen(
             success: false,
-            title: 'Error',
-            message: e.toString(),
+            title: loc.errorTitle,
+            message: userFacingMessage(loc, e),
           ),
         ),
       );
@@ -143,43 +142,43 @@ class _SigningScreenState extends State<SigningScreen> {
   void _onProgress(String objectId, String status, int percent) {
     if (!mounted) return;
     setState(() {
-      _status = status;
+      _statusKey = status;
       _progress = percent / 100.0;
-      _showNfcPrompt = status.contains('Tap') || status.contains('card');
+      _showNfcPrompt = status.contains('Tap') ||
+          status.contains('card') ||
+          status.contains('Hold');
     });
   }
 
   Future<String?> _requestCan() async {
     if (!mounted) return null;
     setState(() {
-      _status = 'Checking CAN...';
+      _statusKey = 'Checking CAN...';
       _showNfcPrompt = false;
     });
 
-    // Try stored CAN first
-    final stored = await _storage.read(key: _canStorageKey);
-    if (stored != null && stored.length == 6) {
-      // ignore: avoid_print
-      print('SB using stored CAN (length 6). Change it from the home screen if it is wrong.');
+    final stored = await readStoredCan();
+    if (stored != null) {
+      sbLog('using stored CAN (length 6)');
       return stored;
     }
 
-    // No stored CAN — show CAN entry screen
     if (!mounted) return null;
     final can = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) =>
-            CanScreen(onSubmit: (can) => Navigator.of(context).pop(can)),
+        builder: (_) => CanScreen(
+          firstTimeHint: true,
+          onSubmit: (can) => Navigator.of(context).pop(can),
+        ),
       ),
     );
-    // CAN is saved by CanScreen itself via FlutterSecureStorage
     return can;
   }
 
   Future<String?> _requestPin() async {
     if (!mounted) return null;
     setState(() {
-      _status = 'Enter your eSign PIN';
+      _statusKey = 'Enter your signing PIN';
       _showNfcPrompt = false;
     });
     final pin = await Navigator.of(context).push<String>(
@@ -190,7 +189,7 @@ class _SigningScreenState extends State<SigningScreen> {
     );
     if (pin != null) {
       setState(() {
-        _status = 'Tap your eID card...';
+        _statusKey = 'Tap your eID card...';
         _showNfcPrompt = true;
       });
     }
@@ -199,6 +198,7 @@ class _SigningScreenState extends State<SigningScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final objectCount = widget.localPoc
         ? 1
         : (widget.request!.objects?.length ?? 0) +
@@ -209,13 +209,12 @@ class _SigningScreenState extends State<SigningScreen> {
                   0);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Signing')),
+      appBar: AppBar(title: Text(l10n.signingTitle)),
       body: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // NFC icon — animated when waiting for tap
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               child: Icon(
@@ -227,13 +226,13 @@ class _SigningScreenState extends State<SigningScreen> {
             ),
             const SizedBox(height: 32),
             Text(
-              _status,
+              localizeStatus(l10n, _statusKey),
               style: Theme.of(context).textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             Text(
-              '$objectCount document(s)',
+              l10n.documentsCount(objectCount),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 24),
@@ -243,8 +242,7 @@ class _SigningScreenState extends State<SigningScreen> {
             const SizedBox(height: 48),
             if (_showNfcPrompt)
               Text(
-                'Hold your eID card to the back of the phone\n'
-                'and keep it still until signing completes.',
+                l10n.holdCardHint,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,

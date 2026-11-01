@@ -21,11 +21,12 @@ import 'package:dmrtd/internal.dart';
 import 'package:dmrtd/src/proto/can_key.dart';
 import 'package:logger/logger.dart';
 
+import '../util/sb_log.dart';
+
 final _log = Logger(printer: PrettyPrinter(methodCount: 0));
 
 void _sb(String message) {
-  // ignore: avoid_print
-  print('SB $message');
+  sbLog(message);
   _log.i(message);
 }
 
@@ -204,7 +205,10 @@ class CardReader {
     }
 
     if (resp.status == StatusWord.authenticationMethodBlocked) {
-      throw StateError('eSign PIN is blocked (too many wrong attempts)');
+      throw StateError(
+        'eSign PIN is blocked (too many wrong attempts). '
+        'Unblock it with the official ROeID app or at a dedicated desk.',
+      );
     }
 
     throw StateError('PIN verification failed: ${resp.status.description()}');

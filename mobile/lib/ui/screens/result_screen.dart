@@ -1,6 +1,8 @@
 // SignBridge — Result screen (success / error)
 
 import 'package:flutter/material.dart';
+
+import '../../l10n/app_localizations.dart';
 import '../theme.dart';
 
 class ResultScreen extends StatelessWidget {
@@ -19,11 +21,14 @@ class ResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final color = success ? AppTheme.successColor : AppTheme.errorColor;
     final icon = success ? Icons.check_circle_outline : Icons.error_outline;
 
     return Scaffold(
-      appBar: AppBar(title: Text(success ? 'Success' : 'Error')),
+      appBar: AppBar(
+        title: Text(success ? l10n.successTitle : l10n.errorTitle),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
@@ -51,7 +56,7 @@ class ResultScreen extends StatelessWidget {
               onPressed:
                   onDone ??
                   () => Navigator.of(context).popUntil((r) => r.isFirst),
-              child: const Text('Done'),
+              child: Text(l10n.done),
             ),
           ],
         ),

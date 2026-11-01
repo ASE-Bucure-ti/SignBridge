@@ -2,10 +2,14 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:app_links/app_links.dart';
 import 'package:logger/logger.dart';
+import 'l10n/app_localizations.dart';
 import 'protocol/models.dart';
+import 'protocol/user_messages.dart';
 import 'processing/request_handler.dart';
+import 'storage/app_storage.dart';
 import 'ui/theme.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/screens/signing_screen.dart';
@@ -64,13 +68,25 @@ class _SignBridgeAppState extends State<SignBridgeApp> {
       final response = _requestHandler.validateAndAck(request);
 
       if (response.status == 'accepted') {
+        // Don't block deep-link signing behind onboarding; CAN is collected
+        // inside the signing flow if missing.
+        markOnboardingDone();
         _startSigningFlow(request);
       } else {
-        _showError(response.errors?.first.message ?? 'Request rejected');
+        final ctx = _navigatorKey.currentContext;
+        final fallback = ctx != null
+            ? AppLocalizations.of(ctx).requestErrorTitle
+            : 'Request rejected';
+        _showError(response.errors?.first.message ?? fallback);
       }
     } catch (e) {
       _log.e('Deep link handling failed: $e');
-      _showError(e.toString());
+      final ctx = _navigatorKey.currentContext;
+      _showError(
+        ctx != null
+            ? userFacingMessage(AppLocalizations.of(ctx), e)
+            : e.toString(),
+      );
     }
   }
 
@@ -81,11 +97,15 @@ class _SignBridgeAppState extends State<SignBridgeApp> {
   }
 
   void _showError(String message) {
+    final ctx = _navigatorKey.currentContext;
+    final title = ctx != null
+        ? AppLocalizations.of(ctx).requestErrorTitle
+        : 'Request error';
     _navigatorKey.currentState?.push(
       MaterialPageRoute(
         builder: (_) => ResultScreen(
           success: false,
-          title: 'Request Error',
+          title: title,
           message: message,
         ),
       ),
@@ -101,10 +121,25 @@ class _SignBridgeAppState extends State<SignBridgeApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SignBridge',
+      onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       navigatorKey: _navigatorKey,
+      localeListResolutionCallback: (locales, supported) {
+        for (final locale in locales ?? const <Locale>[]) {
+          for (final s in supported) {
+            if (s.languageCode == locale.languageCode) return s;
+          }
+        }
+        return const Locale('en');
+      },
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
       home: const HomeScreen(),
     );
   }
