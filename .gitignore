@@ -4,12 +4,18 @@ api.key
 *.pem
 *.p12
 *.pfx
+*.jks
+*.keystore
 *.cert
 *.crt
+**/key.properties
 .env
 .env.*
 .env.local
 .env.production
+
+# ─── Local scratch / Play listing drafts ────────────────────────────
+tmp/
 
 # ─── Legacy / deprecated code ──────────────────────────────────────
 native_app_old/
